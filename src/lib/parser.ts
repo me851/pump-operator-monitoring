@@ -75,38 +75,38 @@ const REASON_KEYWORDS: Record<string, string> = {
   "accident": "Accident",
 };
 
-function translateBengaliToEnglish(text: string): string {
-  let translated = text.toLowerCase();
-  
-  const bengaliToEnglish: Record<string, string> = {
-    "পাম্প": "pump",
-    "মোটর": "motor",
-    "চালু": "start",
-    "বন্ধ": "stop",
-    "শুরু": "start",
-    "চলছে": "running",
-    "হচ্ছে": "happening",
-    "না": "not",
-    "করা": "done",
-    "হয়েছে": "done",
-    "সমস্যা": "problem",
-    "ত্রুটি": "fault",
-    "মেরামত": "repair",
-    "লাইন": "line",
-    "বিদ্যুৎ": "electricity",
-    "পানি": "water",
-    "জল": "water",
-  };
+const bengaliWordMap: Record<string, string> = {
+  "পাম্প": "pump",
+  "মোটর": "motor",
+  "চালু": "start",
+  "বন্ধ": "stop",
+  "শুরু": "start",
+  "চলছে": "running",
+  "হচ্ছে": "happening",
+  "না": "not",
+  "করা": "done",
+  "হয়েছে": "done",
+  "সমস্যা": "problem",
+  "ত্রুটি": "fault",
+  "মেরামত": "repair",
+  "লাইন": "line",
+  "বিদ্যুৎ": "electricity",
+  "পানি": "water",
+  "জল": "water",
+  "কারণ": "because",
+  "তাই": "so",
+  "এবার": "now",
+};
 
-  for (const [bn, en] of Object.entries(bengaliToEnglish)) {
+function basicBengaliTranslate(text: string): string {
+  let translated = text.toLowerCase();
+  for (const [bn, en] of Object.entries(bengaliWordMap)) {
     translated = translated.replace(new RegExp(bn, "g"), en);
   }
-
   return translated;
 }
 
-function extractTime(text: string): string | undefined {
-  const now = new Date();
+function extractTimeFromMessage(text: string): string | undefined {
   const timePatterns = [
     /(\d{1,2}):(\d{2})\s*(am|pm)?/i,
     /(\d{1,2})\s*(am|pm)/i,
@@ -127,10 +127,10 @@ function extractTime(text: string): string | undefined {
     }
   }
 
-  return `${now.getHours().toString().padStart(2, "0")}:${now.getMinutes().toString().padStart(2, "0")}`;
+  return undefined;
 }
 
-function extractDate(text: string): string | undefined {
+function extractDateFromMessage(text: string): string | undefined {
   const datePatterns = [
     /(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/,
     /(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/,
@@ -147,7 +147,7 @@ function extractDate(text: string): string | undefined {
     }
   }
 
-  return new Date().toISOString().split("T")[0];
+  return undefined;
 }
 
 function extractReason(text: string): string | undefined {
@@ -167,14 +167,17 @@ function extractReason(text: string): string | undefined {
   return undefined;
 }
 
-export function parseWhatsAppMessage(message: string): ParsedMessage {
+export function parseWhatsAppMessage(
+  message: string,
+  whatsappTimestamp?: string
+): ParsedMessage {
   const result: ParsedMessage = {
     action: "unknown",
     confidence: 0,
   };
 
   const normalizedMessage = message.toLowerCase().trim();
-  const translatedMessage = translateBengaliToEnglish(message);
+  const translatedMessage = basicBengaliTranslate(message);
   const combinedText = `${normalizedMessage} ${translatedMessage}`;
 
   for (const [keyword, action] of Object.entries(ENGLISH_KEYWORDS)) {
@@ -185,11 +188,13 @@ export function parseWhatsAppMessage(message: string): ParsedMessage {
     }
   }
 
-  for (const [keyword, action] of Object.entries(BENGALI_KEYWORDS)) {
-    if (normalizedMessage.includes(keyword)) {
-      result.action = action as ParsedMessage["action"];
-      result.confidence = 0.85;
-      break;
+  if (result.action === "unknown") {
+    for (const [keyword, action] of Object.entries(BENGALI_KEYWORDS)) {
+      if (normalizedMessage.includes(keyword)) {
+        result.action = action as ParsedMessage["action"];
+        result.confidence = 0.85;
+        break;
+      }
     }
   }
 
@@ -203,14 +208,24 @@ export function parseWhatsAppMessage(message: string): ParsedMessage {
     }
   }
 
-  const time = extractTime(message);
-  if (time) {
-    result.time = time;
+  const timeFromMessage = extractTimeFromMessage(message);
+  if (timeFromMessage) {
+    result.time = timeFromMessage;
+  } else if (whatsappTimestamp) {
+    const date = new Date(whatsappTimestamp);
+    if (!isNaN(date.getTime())) {
+      result.time = `${date.getHours().toString().padStart(2, "0")}:${date.getMinutes().toString().padStart(2, "0")}`;
+    }
   }
 
-  const date = extractDate(message);
-  if (date) {
-    result.date = date;
+  const dateFromMessage = extractDateFromMessage(message);
+  if (dateFromMessage) {
+    result.date = dateFromMessage;
+  } else if (whatsappTimestamp) {
+    const date = new Date(whatsappTimestamp);
+    if (!isNaN(date.getTime())) {
+      result.date = date.toISOString().split("T")[0];
+    }
   }
 
   const reason = extractReason(message);
@@ -222,6 +237,50 @@ export function parseWhatsAppMessage(message: string): ParsedMessage {
   }
 
   return result;
+}
+
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
+
+export async function translateToEnglish(text: string): Promise<string> {
+  if (!text || text.trim() === "") return text;
+  
+  const isBengali = /[\u0980-\u09FF]/.test(text);
+  if (!isBengali) return text;
+
+  if (OPENAI_API_KEY) {
+    try {
+      const response = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${OPENAI_API_KEY}`,
+        },
+        body: JSON.stringify({
+          model: "gpt-4o-mini",
+          messages: [
+            {
+              role: "system",
+              content: "You are a Bengali to English translator. Translate the following Bengali text to English accurately. Preserve the meaning and nuance. Only respond with the translation, nothing else."
+            },
+            {
+              role: "user",
+              content: text
+            }
+          ],
+          max_tokens: 1000,
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        return data.choices?.[0]?.message?.content?.trim() || text;
+      }
+    } catch (error) {
+      console.error("Translation API error:", error);
+    }
+  }
+
+  return basicBengaliTranslate(text);
 }
 
 export function generateResponseMessage(

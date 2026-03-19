@@ -1,13 +1,14 @@
 "use client";
 
-import { useState, useCallback } from "react";
-import { getPhoneMappings, getPumpHouses, getSchemes, getDivisions, getOperations, saveOperation } from "@/lib/storage";
-import { PhoneMapping, PumpHouse, Scheme, Division, PumpOperation } from "@/types";
-import { parseWhatsAppMessage } from "@/lib/parser";
+import { useState } from "react";
+import { getPhoneMappings, getPumpHouses, getSchemes, getDivisions, getOperations } from "@/lib/storage";
+import { PhoneMapping, PumpHouse, PumpOperation } from "@/types";
+import { parseWhatsAppMessage, translateToEnglish } from "@/lib/parser";
 
 interface ChatMessage {
   date: string;
   time: string;
+  whatsappTimestamp: string;
   phoneNumber: string;
   senderName: string;
   message: string;
@@ -20,10 +21,10 @@ interface ImportResult {
 }
 
 export default function ImportPage() {
-  const [fileContent, setFileContent] = useState("");
   const [parsedMessages, setParsedMessages] = useState<ChatMessage[]>([]);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [showTranslation, setShowTranslation] = useState(false);
 
   const parseWhatsAppChat = (content: string): ChatMessage[] => {
     const lines = content.split("\n");
@@ -62,9 +63,12 @@ export default function ImportPage() {
         
         const formattedTime = `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
         
+        const whatsappTimestamp = new Date(`${formattedDate}T${formattedTime}:00`);
+        
         currentMessage = {
           date: formattedDate,
           time: formattedTime,
+          whatsappTimestamp: whatsappTimestamp.toISOString(),
           phoneNumber: "",
           senderName: "",
           message: ""
@@ -108,7 +112,6 @@ export default function ImportPage() {
     const reader = new FileReader();
     reader.onload = (e) => {
       const content = e.target?.result as string;
-      setFileContent(content);
       
       const skipHeaderLines = 5;
       const contentAfterHeader = content.split("\n").slice(skipHeaderLines).join("\n");
@@ -129,15 +132,9 @@ export default function ImportPage() {
     }) || null;
   };
 
-  const getPumpHouseDetails = (pumpHouseId: string) => {
-    const ph = getPumpHouses().find(p => p.id === pumpHouseId);
-    const sc = ph ? getSchemes().find(s => s.id === ph.schemeId) : null;
-    const div = sc ? getDivisions().find(d => d.id === sc.divisionId) : null;
-    return { pumpHouse: ph, scheme: sc, division: div };
-  };
-
   const processImport = async () => {
     setIsProcessing(true);
+    setShowTranslation(true);
     const result: ImportResult = { success: 0, failed: 0, errors: [] };
     
     const existingOps = getOperations();
@@ -157,14 +154,16 @@ export default function ImportPage() {
         continue;
       }
 
-      const parsed = parseWhatsAppMessage(msg.message);
+      const parsed = parseWhatsAppMessage(msg.message, msg.whatsappTimestamp);
       
       if (parsed.action === "unknown") {
         result.failed++;
         continue;
       }
 
-      const date = msg.date;
+      const translatedMessage = await translateToEnglish(msg.message);
+
+      const date = parsed.date || msg.date;
       const time = parsed.time || msg.time;
 
       if (parsed.action === "start") {
@@ -179,7 +178,7 @@ export default function ImportPage() {
           status: "running",
           reason: undefined,
           rawMessage: msg.message,
-          translatedMessage: undefined,
+          translatedMessage: translatedMessage,
           createdAt: new Date().toISOString(),
         };
         existingOps.push(newOp);
@@ -198,6 +197,7 @@ export default function ImportPage() {
           latestOp.stopTime = time;
           latestOp.status = "stopped";
           latestOp.rawMessage = msg.message;
+          latestOp.translatedMessage = translatedMessage;
           result.success++;
         } else {
           const newOp: PumpOperation = {
@@ -211,7 +211,7 @@ export default function ImportPage() {
             status: "stopped",
             reason: undefined,
             rawMessage: msg.message,
-            translatedMessage: undefined,
+            translatedMessage: translatedMessage,
             createdAt: new Date().toISOString(),
           };
           existingOps.push(newOp);
@@ -230,7 +230,7 @@ export default function ImportPage() {
           status: "not_running",
           reason: parsed.reason || "Not specified",
           rawMessage: msg.message,
-          translatedMessage: parsed.reason,
+          translatedMessage: translatedMessage,
           createdAt: new Date().toISOString(),
         };
         existingOps.push(newOp);
@@ -319,23 +319,24 @@ export default function ImportPage() {
               <table className="table text-sm">
                 <thead>
                   <tr>
-                    <th>Date</th>
-                    <th>Time</th>
+                    <th>Date/Time</th>
                     <th>Phone</th>
-                    <th>Message</th>
+                    <th>Original Message</th>
                     <th>Status</th>
                   </tr>
                 </thead>
                 <tbody>
                   {parsedMessages.slice(0, 50).map((msg, idx) => {
                     const mapping = getPhoneMapping(msg.phoneNumber);
-                    const parsed = parseWhatsAppMessage(msg.message);
+                    const parsed = parseWhatsAppMessage(msg.message, msg.whatsappTimestamp);
                     return (
                       <tr key={idx}>
-                        <td>{msg.date}</td>
-                        <td>{msg.time}</td>
+                        <td className="whitespace-nowrap">{msg.date} {msg.time}</td>
                         <td className="font-mono text-xs">{msg.phoneNumber.substring(0, 15)}</td>
-                        <td className="max-w-xs truncate">{msg.message.substring(0, 30)}</td>
+                        <td className="max-w-xs truncate" title={msg.message}>
+                          {msg.message.substring(0, 35)}
+                          {msg.message.length > 35 && "..."}
+                        </td>
                         <td>
                           {mapping ? (
                             <span className={`badge ${parsed.action === "unknown" ? "bg-slate-200 text-slate-600" : "badge-success"}`}>
@@ -364,7 +365,7 @@ export default function ImportPage() {
               disabled={isProcessing || mappedMessages.length === 0}
               className="btn btn-primary disabled:opacity-50"
             >
-              {isProcessing ? "Processing..." : `Import ${mappedMessages.length} Messages`}
+              {isProcessing ? "Processing & Translating..." : `Import ${mappedMessages.length} Messages`}
             </button>
           </div>
         </>
