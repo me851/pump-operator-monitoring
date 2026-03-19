@@ -276,84 +276,26 @@ export async function translateToEnglish(text: string): Promise<string> {
     }
   }
 
-  if (provider === "ollama-cloud" && ollamaApiKey) {
+  if ((provider === "ollama-cloud" && ollamaApiKey) || (provider === "openrouter" && openrouterApiKey) || (provider === "openai" && openaiApiKey)) {
     try {
-      const response = await fetch("https://ollama.com/v1/chat/completions", {
+      const apiKey = provider === "ollama-cloud" ? ollamaApiKey : provider === "openrouter" ? openrouterApiKey : openaiApiKey;
+      const response = await fetch("/api/translate", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${ollamaApiKey}`,
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: ollamaModel || "llama3.2",
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: text }
-          ],
+          text,
+          provider,
+          apiKey,
+          model: ollamaModel
         }),
       });
 
       if (response.ok) {
         const data = await response.json();
-        return data.choices?.[0]?.message?.content?.trim() || text;
+        return data.translation || text;
       }
     } catch (error) {
-      console.error("Ollama cloud translation error:", error);
-    }
-  }
-
-  if (provider === "openrouter" && openrouterApiKey) {
-    try {
-      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${openrouterApiKey}`,
-          "HTTP-Referer": typeof window !== "undefined" ? window.location.origin : "",
-          "X-Title": "AquaLog",
-        },
-        body: JSON.stringify({
-          model: ollamaModel || "google/gemma-3-4b-it:free",
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: text }
-          ],
-        }),
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        return data.choices?.[0]?.message?.content?.trim() || text;
-      }
-    } catch (error) {
-      console.error("OpenRouter translation error:", error);
-    }
-  }
-
-  if (provider === "openai" && openaiApiKey) {
-    try {
-      const response = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${openaiApiKey}`,
-        },
-        body: JSON.stringify({
-          model: "gpt-4o-mini",
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: text }
-          ],
-          max_tokens: 1000,
-        }),
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        return data.choices?.[0]?.message?.content?.trim() || text;
-      }
-    } catch (error) {
-      console.error("OpenAI translation error:", error);
+      console.error(`${provider} translation error:`, error);
     }
   }
 

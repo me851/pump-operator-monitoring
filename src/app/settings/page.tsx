@@ -67,20 +67,22 @@ export default function SettingsPage() {
           setIsConnecting(false);
           return;
         }
+        setStatusMessage("Testing connection...");
+        setStatusType("info");
+        
         try {
-          const response = await fetch("https://ollama.com/v1/chat/completions", {
+          const response = await fetch("/api/test-translation", {
             method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Authorization": `Bearer ${settings.ollamaApiKey}`,
-            },
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              model: "llama3.2",
-              messages: [{ role: "user", content: "Hi" }],
-              stream: false,
+              apiKey: settings.ollamaApiKey.trim(),
+              provider: "ollama-cloud"
             }),
           });
-          if (response.ok) {
+          
+          const result = await response.json();
+          
+          if (response.ok && result.success) {
             setIsConnected(true);
             setStatusMessage("Connected to Ollama Cloud!");
             setStatusType("success");
@@ -97,12 +99,12 @@ export default function SettingsPage() {
               { name: "mistral-large-3:675b", model: "mistral-large-3:675b" },
             ]);
           } else {
-            const errorText = await response.text();
-            setStatusMessage(`Failed: ${response.status} - Check API key`);
+            setStatusMessage(result.error || "Connection failed");
             setStatusType("error");
           }
-        } catch (err) {
-          setStatusMessage("Connection failed. Check network/API key.");
+        } catch (err: unknown) {
+          const errorMessage = err instanceof Error ? err.message : "Unknown error";
+          setStatusMessage(`Connection failed: ${errorMessage}`);
           setStatusType("error");
         }
       } else if (settings.provider === "openrouter") {
@@ -112,20 +114,22 @@ export default function SettingsPage() {
           setIsConnecting(false);
           return;
         }
+        setStatusMessage("Testing connection...");
+        setStatusType("info");
+        
         try {
-          const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+          const response = await fetch("/api/test-translation", {
             method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Authorization": `Bearer ${settings.openrouterApiKey}`,
-              "HTTP-Referer": typeof window !== "undefined" ? window.location.origin : "http://localhost",
-            },
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              model: "google/gemma-3-4b-it:free",
-              messages: [{ role: "user", content: "Hi" }],
+              apiKey: settings.openrouterApiKey.trim(),
+              provider: "openrouter"
             }),
           });
-          if (response.ok) {
+          
+          const result = await response.json();
+          
+          if (response.ok && result.success) {
             setIsConnected(true);
             setStatusMessage("Connected to OpenRouter!");
             setStatusType("success");
@@ -137,11 +141,12 @@ export default function SettingsPage() {
               { name: "qwen/qwen2.5-72b-instruct:free", model: "qwen/qwen2.5-72b-instruct:free" },
             ]);
           } else {
-            setStatusMessage("Failed to connect. Check API key.");
+            setStatusMessage(result.error || "Connection failed");
             setStatusType("error");
           }
-        } catch {
-          setStatusMessage("Connection failed. Check network/API key.");
+        } catch (err: unknown) {
+          const errorMessage = err instanceof Error ? err.message : "Unknown error";
+          setStatusMessage(`Connection failed: ${errorMessage}`);
           setStatusType("error");
         }
       } else if (settings.provider === "openai") {
