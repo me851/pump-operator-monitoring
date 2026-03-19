@@ -81,7 +81,7 @@ export default function WhatsAppChatPage() {
         startTime: timeStr,
         stopTime: null,
         status: "running",
-        reason: null,
+        reason: undefined,
         rawMessage: message,
       });
       
