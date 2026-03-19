@@ -477,16 +477,20 @@ function PhoneMappingTab({ phoneMappings, pumpHouses, schemes, divisions, onSave
 
       {isAdding && (
         <form onSubmit={handleSubmit} className="mb-4 p-4 bg-slate-50 rounded-lg space-y-3">
-          <div className="flex gap-2">
+          <div>
+            <label className="label">Phone Number</label>
             <input
               type="tel"
-              className="input flex-1"
-              placeholder="Phone Number (e.g., +91 90000 11111)"
+              className="input"
+              placeholder="Enter phone number (e.g., +91 90000 11111)"
               value={phoneNumber}
               onChange={(e) => setPhoneNumber(e.target.value)}
             />
+          </div>
+          <div>
+            <label className="label">Pump House (Scheme - Division)</label>
             <select
-              className="select w-72"
+              className="select"
               value={pumpHouseId}
               onChange={(e) => setPumpHouseId(e.target.value)}
             >
@@ -496,20 +500,23 @@ function PhoneMappingTab({ phoneMappings, pumpHouses, schemes, divisions, onSave
                 const division = scheme ? divisions.find((d: Division) => d.id === scheme.divisionId) : null;
                 return (
                   <option key={p.id} value={p.id}>
-                    {scheme?.name || "Unknown"} - {p.name} ({division?.name || "Unknown"})
+                    {p.name} - {scheme?.name || "Unknown"} ({division?.name || "Unknown"})
                   </option>
                 );
               })}
             </select>
           </div>
-          <div className="flex gap-2">
+          <div>
+            <label className="label">Operator Name (Optional)</label>
             <input
               type="text"
-              className="input flex-1"
-              placeholder="Operator Name (optional)"
+              className="input"
+              placeholder="Enter operator name"
               value={operatorName}
               onChange={(e) => setOperatorName(e.target.value)}
             />
+          </div>
+          <div className="flex gap-2">
             <button type="submit" className="btn btn-primary">Save</button>
             <button type="button" onClick={() => setIsAdding(false)} className="btn btn-secondary">Cancel</button>
           </div>
