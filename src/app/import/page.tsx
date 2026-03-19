@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { getPhoneMappings, getPumpHouses, getSchemes, getDivisions, getOperations } from "@/lib/storage";
+import { getPhoneMappings, getPumpHouses, getSchemes, getDivisions, getOperations, saveOperation } from "@/lib/storage";
 import { PhoneMapping, PumpHouse, PumpOperation } from "@/types";
 import { parseWhatsAppMessage, translateToEnglish } from "@/lib/parser";
 
@@ -34,6 +34,20 @@ export default function ImportPage() {
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [showTranslation, setShowTranslation] = useState(false);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [addFormData, setAddFormData] = useState({
+    pumpHouseId: "",
+    date: "",
+    time: "",
+    action: "start" as "start" | "stop" | "not_running",
+    reason: "",
+  });
+  const [addMessage, setAddMessage] = useState("");
+  const [addSuccess, setAddSuccess] = useState("");
+
+  const pumpHouses = getPumpHouses();
+  const schemes = getSchemes();
+  const divisions = getDivisions();
 
   const parseWhatsAppChat = (content: string): ChatMessage[] => {
     const lines = content.split("\n");
@@ -271,6 +285,54 @@ export default function ImportPage() {
     setIsProcessing(false);
   };
 
+  const openAddForm = (failedMsg: FailedMessage) => {
+    setAddFormData({
+      pumpHouseId: "",
+      date: failedMsg.date,
+      time: failedMsg.time,
+      action: "start",
+      reason: "",
+    });
+    setAddMessage(failedMsg.message);
+    setShowAddForm(true);
+  };
+
+  const handleAddToLog = (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!addFormData.pumpHouseId || !addFormData.date || !addFormData.time) {
+      setAddMessage("Please fill all required fields");
+      return;
+    }
+
+    const pumpHouse = pumpHouses.find(p => p.id === addFormData.pumpHouseId);
+    const mapping = getPhoneMappings().find(m => m.pumpHouseId === addFormData.pumpHouseId);
+
+    const newOp: PumpOperation = {
+      id: "op" + Date.now(),
+      pumpHouseId: addFormData.pumpHouseId,
+      operatorName: mapping?.operatorName || "Manual",
+      phoneNumber: "manual",
+      date: addFormData.date,
+      startTime: addFormData.action === "start" ? addFormData.time : null,
+      stopTime: addFormData.action === "stop" ? addFormData.time : null,
+      status: addFormData.action === "not_running" ? "not_running" : 
+              addFormData.action === "start" ? "running" : "stopped",
+      reason: addFormData.action === "not_running" ? addFormData.reason : undefined,
+      rawMessage: "Added from failed import: " + addMessage,
+      createdAt: new Date().toISOString(),
+    };
+
+    const existingOps = getOperations();
+    existingOps.push(newOp);
+    localStorage.setItem("aqualog_operations", JSON.stringify(existingOps));
+
+    setAddSuccess("Operation added successfully!");
+    setShowAddForm(false);
+    setAddMessage("");
+    setTimeout(() => setAddSuccess(""), 3000);
+  };
+
   const mappedMessages = parsedMessages.filter(msg => getPhoneMapping(msg.phoneNumber));
   const unmappedMessages = parsedMessages.filter(msg => !getPhoneMapping(msg.phoneNumber));
 
@@ -461,6 +523,7 @@ export default function ImportPage() {
                       <th>Phone</th>
                       <th>Message</th>
                       <th>Reason</th>
+                      <th>Action</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -471,6 +534,14 @@ export default function ImportPage() {
                         <td className="font-mono">{msg.phone}</td>
                         <td className="max-w-xs truncate">{msg.message}</td>
                         <td><span className="badge bg-amber-100 text-amber-700">{msg.reason}</span></td>
+                        <td>
+                          <button
+                            onClick={() => openAddForm(msg)}
+                            className="text-xs bg-cyan-600 text-white px-2 py-1 rounded hover:bg-cyan-700"
+                          >
+                            Add to Log
+                          </button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -478,6 +549,109 @@ export default function ImportPage() {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {showAddForm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold mb-4">Add Failed Message to Log</h3>
+            <form onSubmit={handleAddToLog} className="space-y-4">
+              <div>
+                <label className="label">Pump House</label>
+                <select
+                  className="select"
+                  value={addFormData.pumpHouseId}
+                  onChange={(e) => setAddFormData({ ...addFormData, pumpHouseId: e.target.value })}
+                  required
+                >
+                  <option value="">Select Pump House</option>
+                  {pumpHouses.map((ph) => {
+                    const scheme = schemes.find(s => s.id === ph.schemeId);
+                    const division = divisions.find(d => d.id === scheme?.divisionId);
+                    return (
+                      <option key={ph.id} value={ph.id}>
+                        {ph.name} - {scheme?.name} ({division?.name})
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+
+              <div>
+                <label className="label">Action</label>
+                <select
+                  className="select"
+                  value={addFormData.action}
+                  onChange={(e) => setAddFormData({ ...addFormData, action: e.target.value as "start" | "stop" | "not_running" })}
+                >
+                  <option value="start">Pump Start</option>
+                  <option value="stop">Pump Stop</option>
+                  <option value="not_running">Not Running</option>
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="label">Date</label>
+                  <input
+                    type="date"
+                    className="input"
+                    value={addFormData.date}
+                    onChange={(e) => setAddFormData({ ...addFormData, date: e.target.value })}
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="label">Time</label>
+                  <input
+                    type="time"
+                    className="input"
+                    value={addFormData.time}
+                    onChange={(e) => setAddFormData({ ...addFormData, time: e.target.value })}
+                    required
+                  />
+                </div>
+              </div>
+
+              {addFormData.action === "not_running" && (
+                <div>
+                  <label className="label">Reason</label>
+                  <input
+                    type="text"
+                    className="input"
+                    value={addFormData.reason}
+                    onChange={(e) => setAddFormData({ ...addFormData, reason: e.target.value })}
+                    placeholder="Reason for not running"
+                  />
+                </div>
+              )}
+
+              <div>
+                <label className="label">Original Message</label>
+                <p className="text-sm text-slate-600 bg-slate-50 p-2 rounded">{addMessage}</p>
+              </div>
+
+              <div className="flex gap-3">
+                <button type="submit" className="btn btn-primary flex-1">
+                  Add to Log
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowAddForm(false)}
+                  className="btn btn-secondary flex-1"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {addSuccess && (
+        <div className="fixed bottom-4 right-4 bg-green-600 text-white px-4 py-2 rounded-lg shadow-lg">
+          {addSuccess}
         </div>
       )}
     </div>
