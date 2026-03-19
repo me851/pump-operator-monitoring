@@ -3,40 +3,15 @@
 import { useState, useEffect } from "react";
 import { getSettings, saveSettings, AppSettings } from "@/lib/storage";
 
-const LOCAL_MODELS = [
-  { value: "llama3.2", label: "Llama 3.2 (Local)" },
-  { value: "llama3.1", label: "Llama 3.1 (Local)" },
-  { value: "llama3", label: "Llama 3 (Local)" },
-  { value: "mistral", label: "Mistral (Local)" },
-  { value: "mixtral", label: "Mixtral (Local)" },
-  { value: "phi3", label: "Phi-3 (Local)" },
-  { value: "gemma2", label: "Gemma 2 (Local)" },
-  { value: "qwen2.5", label: "Qwen 2.5 (Local)" },
-  { value: "qwen3", label: "Qwen 3 (Local)" },
-  { value: "qwen3-coder", label: "Qwen 3 Coder (Local)" },
-  { value: "phi4", label: "Phi-4 (Local)" },
-  { value: "deepseek-r1", label: "DeepSeek R1 (Local)" },
-  { value: "deepseek-v3", label: "DeepSeek V3 (Local)" },
-];
+interface OllamaModel {
+  name: string;
+  model: string;
+}
 
-const CLOUD_MODELS = [
-  { value: "kimi-k2.5", label: "Kimi K2.5 (Free - OpenClaw)", category: "cloud" },
-  { value: "glm-5", label: "GLM-5 (Free - OpenClaw)", category: "cloud" },
-  { value: "qwen3-coder:480b-cloud", label: "Qwen3 Coder 480B (Ollama Cloud)", category: "cloud" },
-  { value: "deepseek-v3.1:671b-cloud", label: "DeepSeek V3.1 671B (Ollama Cloud)", category: "cloud" },
-  { value: "deepseek-v3.2", label: "DeepSeek V3.2 (Free - Ollama Cloud)", category: "cloud" },
-  { value: "minimax-m2.5", label: "MiniMax M2.5 (Free - Ollama Cloud)", category: "cloud" },
-  { value: "minimax-m2.7", label: "MiniMax M2.7 (Free - Ollama Cloud)", category: "cloud" },
-  { value: "devstral-small-2", label: "Devstral Small 2 (Free - Ollama Cloud)", category: "cloud" },
-  { value: "gemini-3-flash-preview", label: "Gemini 3 Flash (Free - Ollama Cloud)", category: "cloud" },
-  { value: "gpt-oss:20b-cloud", label: "GPT-OSS 20B (Ollama Cloud)", category: "cloud" },
-  { value: "gpt-oss:120b-cloud", label: "GPT-OSS 120B (Ollama Cloud)", category: "cloud" },
-];
-
-const OLLAMA_BASE_URLS = [
-  { value: "http://localhost:11434", label: "Local (localhost:11434)" },
-  { value: "https://openclaw.ollama.ai", label: "OpenClaw Cloud (Free)" },
-  { value: "https://cloud.ollama.ai", label: "Ollama Cloud" },
+const DEFAULT_SERVERS = [
+  { label: "Local", host: "localhost", port: "11434" },
+  { label: "OpenClaw (Free)", host: "openclaw.ollama.ai", port: "" },
+  { label: "Ollama Cloud", host: "cloud.ollama.ai", port: "" },
 ];
 
 export default function SettingsPage() {
@@ -45,256 +20,274 @@ export default function SettingsPage() {
     ollamaModel: "llama3.2",
     openaiApiKey: "",
   });
+  
+  const [serverType, setServerType] = useState<"local" | "cloud">("local");
+  const [customHost, setCustomHost] = useState("");
+  const [customPort, setCustomPort] = useState("11434");
   const [saved, setSaved] = useState(false);
-  const [testingOllama, setTestingOllama] = useState(false);
-  const [ollamaStatus, setOllamaStatus] = useState<"success" | "error" | "">("");
-  const [showCustomUrl, setShowCustomUrl] = useState(false);
+  
+  const [isConnected, setIsConnected] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [statusMessage, setStatusMessage] = useState("");
+  const [statusType, setStatusType] = useState<"success" | "error" | "info">("info");
+  
+  const [availableModels, setAvailableModels] = useState<OllamaModel[]>([]);
+  const [isLoadingModels, setIsLoadingModels] = useState(false);
 
   useEffect(() => {
-    setSettings(getSettings());
+    const loaded = getSettings();
+    setSettings(loaded);
+    
+    if (loaded.ollamaBaseUrl.includes("localhost")) {
+      setServerType("local");
+      const url = new URL(loaded.ollamaBaseUrl);
+      setCustomHost(url.hostname);
+      setCustomPort(url.port || "11434");
+    } else {
+      setServerType("cloud");
+      setCustomHost(loaded.ollamaBaseUrl.replace(/^https?:\/\//, ""));
+    }
   }, []);
 
+  const getBaseUrl = (): string => {
+    if (serverType === "local") {
+      return `http://${customHost}:${customPort}`;
+    }
+    if (customHost.includes("://")) {
+      return customHost;
+    }
+    return `https://${customHost}`;
+  };
+
+  const testConnection = async () => {
+    const url = getBaseUrl();
+    setIsConnecting(true);
+    setStatusMessage("Connecting to server...");
+    setStatusType("info");
+    setIsConnected(false);
+    setAvailableModels([]);
+
+    try {
+      const response = await fetch(`${url}/api/tags`);
+      if (response.ok) {
+        setIsConnected(true);
+        setStatusMessage("Connected successfully!");
+        setStatusType("success");
+        setSettings(s => ({ ...s, ollamaBaseUrl: url }));
+        loadModels(url);
+      } else {
+        setStatusMessage(`Connection failed: ${response.status}`);
+        setStatusType("error");
+      }
+    } catch (err) {
+      setStatusMessage("Connection failed. Server unreachable.");
+      setStatusType("error");
+    }
+    
+    setIsConnecting(false);
+  };
+
+  const loadModels = async (url: string) => {
+    setIsLoadingModels(true);
+    try {
+      const response = await fetch(`${url}/api/tags`);
+      if (response.ok) {
+        const data = await response.json();
+        const models = (data.models || []) as OllamaModel[];
+        setAvailableModels(models);
+      }
+    } catch {
+      console.error("Failed to load models");
+    }
+    setIsLoadingModels(false);
+  };
+
   const handleSave = () => {
-    saveSettings(settings);
+    const url = getBaseUrl();
+    saveSettings({ ...settings, ollamaBaseUrl: url });
     setSaved(true);
     setTimeout(() => setSaved(false), 3000);
   };
 
-  const testOllamaConnection = async () => {
-    setTestingOllama(true);
-    setOllamaStatus("");
-    try {
-      const response = await fetch(`${settings.ollamaBaseUrl}/api/tags`);
-      if (response.ok) {
-        setOllamaStatus("success");
-      } else {
-        setOllamaStatus("error");
-      }
-    } catch {
-      setOllamaStatus("error");
-    }
-    setTestingOllama(false);
-  };
-
-  const testModel = async () => {
-    setTestingOllama(true);
-    setOllamaStatus("");
-    try {
-      const response = await fetch(`${settings.ollamaBaseUrl}/api/chat`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: settings.ollamaModel,
-          messages: [{ role: "user", content: "Hello" }],
-          stream: false,
-        }),
-      });
-      if (response.ok) {
-        setOllamaStatus("success");
-      } else {
-        setOllamaStatus("error");
-      }
-    } catch {
-      setOllamaStatus("error");
-    }
-    setTestingOllama(false);
-  };
-
-  const handleUrlChange = (url: string) => {
-    if (url === "custom") {
-      setShowCustomUrl(true);
-      setSettings({ ...settings, ollamaBaseUrl: "" });
-    } else {
-      setShowCustomUrl(false);
-      setSettings({ ...settings, ollamaBaseUrl: url });
-    }
-  };
-
-  const isCloudModel = (model: string) => CLOUD_MODELS.some(m => m.value === model);
-
   return (
     <div>
       <div className="page-header">
-        <h1 className="page-title">Settings</h1>
-        <p className="page-subtitle">Configure translation and AI settings</p>
+        <h1 className="page-title">Translation Settings</h1>
+        <p className="page-subtitle">Configure AI translation for WhatsApp imports</p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="card">
-          <h2 className="text-lg font-semibold mb-4">Ollama Settings</h2>
-          <p className="text-sm text-slate-600 mb-4">
-            Configure Ollama for Bengali to English translation. Use local models (free) or cloud models.
-          </p>
+      <div className="card mb-6">
+        <h2 className="text-lg font-semibold mb-4">Server Connection</h2>
+        
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+          <div>
+            <label className="label">Server Type</label>
+            <select
+              className="select"
+              value={serverType}
+              onChange={(e) => {
+                setServerType(e.target.value as "local" | "cloud");
+                setIsConnected(false);
+                setAvailableModels([]);
+                if (e.target.value === "local") {
+                  setCustomHost("localhost");
+                  setCustomPort("11434");
+                } else {
+                  setCustomHost("openclaw.ollama.ai");
+                  setCustomPort("");
+                }
+              }}
+            >
+              <option value="local">Local (Your Computer)</option>
+              <option value="cloud">Cloud (Remote)</option>
+            </select>
+          </div>
 
-          <div className="space-y-4">
+          <div>
+            <label className="label">
+              {serverType === "local" ? "Host Address" : "Server URL"}
+            </label>
+            <input
+              type="text"
+              className="input"
+              value={customHost}
+              onChange={(e) => {
+                setCustomHost(e.target.value);
+                setIsConnected(false);
+                setAvailableModels([]);
+              }}
+              placeholder={serverType === "local" ? "localhost" : "openclaw.ollama.ai"}
+            />
+          </div>
+
+          {serverType === "local" && (
             <div>
-              <label className="label">Ollama Server</label>
-              <select
-                className="select"
-                value={showCustomUrl ? "custom" : OLLAMA_BASE_URLS.find(u => u.value === settings.ollamaBaseUrl)?.value || ""}
-                onChange={(e) => handleUrlChange(e.target.value)}
-              >
-                {OLLAMA_BASE_URLS.map((url) => (
-                  <option key={url.value} value={url.value}>
-                    {url.label}
-                  </option>
-                ))}
-                <option value="custom">Custom URL...</option>
-              </select>
-              {showCustomUrl && (
-                <input
-                  type="text"
-                  className="input mt-2"
-                  value={settings.ollamaBaseUrl}
-                  onChange={(e) => setSettings({ ...settings, ollamaBaseUrl: e.target.value })}
-                  placeholder="https://your-ollama-server.com"
-                />
-              )}
+              <label className="label">Port</label>
+              <input
+                type="text"
+                className="input"
+                value={customPort}
+                onChange={(e) => {
+                  setCustomPort(e.target.value);
+                  setIsConnected(false);
+                  setAvailableModels([]);
+                }}
+                placeholder="11434"
+              />
             </div>
+          )}
+        </div>
 
+        <button
+          onClick={testConnection}
+          disabled={isConnecting || !customHost}
+          className="btn btn-primary"
+        >
+          {isConnecting ? "Connecting..." : isConnected ? "Reconnect" : "Connect"}
+        </button>
+
+        {statusMessage && (
+          <p className={`mt-3 text-sm ${
+            statusType === "success" ? "text-green-600" :
+            statusType === "error" ? "text-red-600" : "text-blue-600"
+          }`}>
+            {statusMessage}
+          </p>
+        )}
+      </div>
+
+      {isConnected && (
+        <div className="card mb-6">
+          <h2 className="text-lg font-semibold mb-4">Select Model</h2>
+          
+          {isLoadingModels ? (
+            <p className="text-slate-500">Loading available models...</p>
+          ) : availableModels.length > 0 ? (
             <div>
-              <label className="label">Translation Model</label>
+              <label className="label">Available Models on Server</label>
               <select
                 className="select"
                 value={settings.ollamaModel}
-                onChange={(e) => setSettings({ ...settings, ollamaModel: e.target.value })}
+                onChange={(e) => setSettings(s => ({ ...s, ollamaModel: e.target.value }))}
               >
-                <optgroup label="Local Models (Free - Run on your computer)">
-                  {LOCAL_MODELS.map((model) => (
-                    <option key={model.value} value={model.value}>
-                      {model.label}
-                    </option>
-                  ))}
-                </optgroup>
-                <optgroup label="Cloud Models (Free - Use internet)">
-                  {CLOUD_MODELS.map((model) => (
-                    <option key={model.value} value={model.value}>
-                      {model.label}
-                    </option>
-                  ))}
-                </optgroup>
+                {availableModels.map((model) => (
+                  <option key={model.name} value={model.name}>
+                    {model.name}
+                  </option>
+                ))}
               </select>
-              {isCloudModel(settings.ollamaModel) && (
-                <p className="text-xs text-cyan-600 mt-1">
-                  Cloud model selected - requires internet connection
-                </p>
-              )}
-            </div>
-
-            <div className="flex gap-2">
-              <button
-                onClick={testOllamaConnection}
-                disabled={testingOllama || !settings.ollamaBaseUrl}
-                className="btn btn-secondary flex-1"
-              >
-                Test Connection
-              </button>
-              <button
-                onClick={testModel}
-                disabled={testingOllama || !settings.ollamaModel}
-                className="btn btn-secondary flex-1"
-              >
-                Test Model
-              </button>
-            </div>
-
-            {ollamaStatus === "success" && (
-              <p className="text-sm text-green-600">Connection successful!</p>
-            )}
-            {ollamaStatus === "error" && (
-              <p className="text-sm text-red-600">Connection failed. Check URL and ensure service is running.</p>
-            )}
-          </div>
-        </div>
-
-        <div className="card">
-          <h2 className="text-lg font-semibold mb-4">OpenAI Settings (Optional)</h2>
-          <p className="text-sm text-slate-600 mb-4">
-            Configure OpenAI as a fallback when Ollama is unavailable.
-          </p>
-
-          <div className="space-y-4">
-            <div>
-              <label className="label">OpenAI API Key</label>
-              <input
-                type="password"
-                className="input"
-                value={settings.openaiApiKey}
-                onChange={(e) => setSettings({ ...settings, openaiApiKey: e.target.value })}
-                placeholder="sk-..."
-              />
-              <p className="text-xs text-slate-500 mt-1">
-                Get your API key from openai.com/api-key
+              <p className="text-xs text-slate-500 mt-2">
+                {availableModels.length} model(s) available on this server
               </p>
             </div>
-
-            <div className="bg-slate-50 p-4 rounded-lg">
-              <h3 className="font-medium mb-2">Translation Priority:</h3>
-              <ol className="text-sm text-slate-600 space-y-1">
-                <li>1. Ollama (local/cloud) - Primary</li>
-                <li>2. OpenAI (cloud, paid) - Fallback</li>
-                <li>3. Basic translation - Final fallback</li>
-              </ol>
+          ) : (
+            <div>
+              <p className="text-amber-600 mb-3">No models found on server. Enter model name manually:</p>
+              <label className="label">Model Name</label>
+              <input
+                type="text"
+                className="input"
+                value={settings.ollamaModel}
+                onChange={(e) => setSettings(s => ({ ...s, ollamaModel: e.target.value }))}
+                placeholder="llama3.2, kimi-k2.5, etc."
+              />
             </div>
+          )}
+        </div>
+      )}
+
+      <div className="card mb-6">
+        <h2 className="text-lg font-semibold mb-4">Fallback Settings</h2>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="label">OpenAI API Key (Optional)</label>
+            <input
+              type="password"
+              className="input"
+              value={settings.openaiApiKey}
+              onChange={(e) => setSettings(s => ({ ...s, openaiApiKey: e.target.value }))}
+              placeholder="sk-..."
+            />
+            <p className="text-xs text-slate-500 mt-1">
+              Used when Ollama is unavailable
+            </p>
+          </div>
+          
+          <div className="bg-slate-50 p-4 rounded-lg">
+            <h3 className="font-medium mb-2">Translation Priority</h3>
+            <ol className="text-sm text-slate-600 space-y-1">
+              <li>1. Ollama ({serverType === "local" ? "Local" : "Cloud"})</li>
+              <li>2. OpenAI (if API key provided)</li>
+              <li>3. Basic keyword translation</li>
+            </ol>
           </div>
         </div>
       </div>
 
-      <div className="mt-6">
+      <div className="flex items-center gap-4">
         <button onClick={handleSave} className="btn btn-primary">
           Save Settings
         </button>
         {saved && (
-          <span className="ml-3 text-green-600">Settings saved successfully!</span>
+          <span className="text-green-600">Settings saved!</span>
         )}
       </div>
 
-      <div className="card mt-6">
-        <h2 className="text-lg font-semibold mb-4">How to Use Free Cloud Models</h2>
-        <div className="prose prose-sm max-w-none text-slate-600">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="bg-green-50 p-4 rounded-lg">
-              <h3 className="font-medium text-green-800 mb-2">Option 1: OpenClaw (Recommended - Free)</h3>
-              <p className="text-sm mb-2">OpenClaw provides free access to cloud models including Kimi K2.5 and GLM-5.</p>
-              <ul className="text-xs list-disc pl-4 space-y-1">
-                <li>Select: <strong>https://openclaw.ollama.ai</strong> as server</li>
-                <li>Model: <strong>kimi-k2.5</strong> or <strong>glm-5</strong></li>
-                <li>No setup required - just select and test</li>
-              </ul>
-            </div>
-            <div className="bg-blue-50 p-4 rounded-lg">
-              <h3 className="font-medium text-blue-800 mb-2">Option 2: Ollama Cloud (Free)</h3>
-              <p className="text-sm mb-2">Official Ollama cloud models.</p>
-              <ul className="text-xs list-disc pl-4 space-y-1">
-                <li>Select: <strong>https://cloud.ollama.ai</strong> as server</li>
-                <li>Models: deepseek-v3.2, minimax-m2.5, etc.</li>
-                <li>May require Ollama Pro account</li>
-              </ul>
-            </div>
-            <div className="bg-purple-50 p-4 rounded-lg">
-              <h3 className="font-medium text-purple-800 mb-2">Option 3: Local Models (Free)</h3>
-              <p className="text-sm mb-2">Run models on your own computer.</p>
-              <ul className="text-xs list-disc pl-4 space-y-1">
-                <li>Select: <strong>Local (localhost:11434)</strong></li>
-                <li>Install Ollama from ollama.com</li>
-                <li>Run: <code>ollama pull llama3.2</code></li>
-              </ul>
-            </div>
-            <div className="bg-amber-50 p-4 rounded-lg">
-              <h3 className="font-medium text-amber-800 mb-2">Option 4: Custom Server</h3>
-              <p className="text-sm mb-2">Connect to any Ollama-compatible server.</p>
-              <ul className="text-xs list-disc pl-4 space-y-1">
-                <li>Select: <strong>Custom URL...</strong></li>
-                <li>Enter your server URL</li>
-                <li>Works with any Ollama API endpoint</li>
-              </ul>
-            </div>
+      {isConnected && (
+        <div className="card mt-6">
+          <h2 className="text-lg font-semibold mb-2">Quick Tips</h2>
+          <div className="text-sm text-slate-600 space-y-2">
+            <p>
+              <strong>For free cloud translation:</strong> Use OpenClaw server ({customHost.includes("openclaw") ? "already selected" : "enter: openclaw.ollama.ai"}) 
+              with model: <code>kimi-k2.5</code> or <code>glm-5</code>
+            </p>
+            <p>
+              <strong>For local:</strong> Install Ollama from ollama.com, then run: <code>ollama pull llama3.2</code>
+            </p>
           </div>
-          <p className="mt-4">
-            <strong>Recommended for translation</strong>: Try <code>kimi-k2.5</code> with OpenClaw server - it&apos;s free and great at translations!
-          </p>
         </div>
-      </div>
+      )}
     </div>
   );
 }
