@@ -278,7 +278,7 @@ export async function translateToEnglish(text: string): Promise<string> {
 
   if (provider === "ollama-cloud" && ollamaApiKey) {
     try {
-      const response = await fetch("https://api.ollama.com/v1/chat/completions", {
+      const response = await fetch("https://ollama.com/v1/chat/completions", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

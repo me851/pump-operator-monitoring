@@ -67,7 +67,7 @@ export default function SettingsPage() {
           setIsConnecting(false);
           return;
         }
-        const response = await fetch("https://api.ollama.com/v1/models", {
+        const response = await fetch("https://ollama.com/v1/models", {
           headers: { "Authorization": `Bearer ${settings.ollamaApiKey}` }
         });
         if (response.ok) {
@@ -78,7 +78,8 @@ export default function SettingsPage() {
           setStatusMessage("Connected to Ollama Cloud!");
           setStatusType("success");
         } else {
-          setStatusMessage("Invalid Ollama API key");
+          const errorText = await response.text();
+          setStatusMessage(`Failed: ${response.status} - ${errorText.substring(0, 50)}`);
           setStatusType("error");
         }
       } else if (settings.provider === "openrouter") {
@@ -88,8 +89,11 @@ export default function SettingsPage() {
           setIsConnecting(false);
           return;
         }
-        const response = await fetch("https://openrouter.ai/api/v1/models", {
-          headers: { "Authorization": `Bearer ${settings.openrouterApiKey}` }
+        const response = await fetch("https://openrouter.ai/api/v1/models?limit=100", {
+          headers: { 
+            "Authorization": `Bearer ${settings.openrouterApiKey}`,
+            "HTTP-Referer": typeof window !== "undefined" ? window.location.origin : "http://localhost",
+          }
         });
         if (response.ok) {
           const data = await response.json();
@@ -99,7 +103,7 @@ export default function SettingsPage() {
           setStatusMessage("Connected to OpenRouter!");
           setStatusType("success");
         } else {
-          setStatusMessage("Invalid OpenRouter API key");
+          setStatusMessage("Failed to connect to OpenRouter");
           setStatusType("error");
         }
       } else if (settings.provider === "openai") {
