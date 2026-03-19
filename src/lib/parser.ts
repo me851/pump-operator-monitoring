@@ -1,4 +1,5 @@
 import { ParsedMessage } from "@/types";
+import { getSettings } from "./storage";
 
 const BENGALI_KEYWORDS: Record<string, string> = {
   "পাম্প চালু": "start",
@@ -239,15 +240,16 @@ export function parseWhatsAppMessage(
   return result;
 }
 
-const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || "http://localhost:11434";
-const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "llama3.2";
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
-
 export async function translateToEnglish(text: string): Promise<string> {
   if (!text || text.trim() === "") return text;
   
   const isBengali = /[\u0980-\u09FF]/.test(text);
   if (!isBengali) return text;
+
+  const settings = getSettings();
+  const OLLAMA_BASE_URL = settings.ollamaBaseUrl || "http://localhost:11434";
+  const OLLAMA_MODEL = settings.ollamaModel || "llama3.2";
+  const OPENAI_API_KEY = settings.openaiApiKey || "";
 
   // Try Ollama first (local, free)
   if (OLLAMA_BASE_URL) {

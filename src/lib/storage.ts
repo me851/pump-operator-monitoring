@@ -8,6 +8,7 @@ const STORAGE_KEYS = {
   pumpHouses: "aqualog_pumphouses",
   phoneMappings: "aqualog_phone_mappings",
   operations: "aqualog_operations",
+  settings: "aqualog_settings",
 };
 
 function generateId(): string {
@@ -230,4 +231,29 @@ export function initializeSampleData(): void {
   savePhoneMapping({ pumpHouseId: pumpHouses[0].id, phoneNumber: "+919000111111", operatorName: "Ramesh" });
   savePhoneMapping({ pumpHouseId: pumpHouses[1].id, phoneNumber: "+919000222222", operatorName: "Suresh" });
   savePhoneMapping({ pumpHouseId: pumpHouses[2].id, phoneNumber: "+919000333333", operatorName: "Mahesh" });
+}
+
+export interface AppSettings {
+  ollamaBaseUrl: string;
+  ollamaModel: string;
+  openaiApiKey: string;
+}
+
+const DEFAULT_SETTINGS: AppSettings = {
+  ollamaBaseUrl: "http://localhost:11434",
+  ollamaModel: "llama3.2",
+  openaiApiKey: "",
+};
+
+export function getSettings(): AppSettings {
+  if (typeof window === "undefined") return DEFAULT_SETTINGS;
+  const data = localStorage.getItem(STORAGE_KEYS.settings);
+  return data ? { ...DEFAULT_SETTINGS, ...JSON.parse(data) } : DEFAULT_SETTINGS;
+}
+
+export function saveSettings(settings: Partial<AppSettings>): AppSettings {
+  const current = getSettings();
+  const updated = { ...current, ...settings };
+  localStorage.setItem(STORAGE_KEYS.settings, JSON.stringify(updated));
+  return updated;
 }

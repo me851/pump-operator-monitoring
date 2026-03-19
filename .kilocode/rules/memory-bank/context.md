@@ -6,9 +6,11 @@
 
 ## Recently Completed
 
+- [x] Settings Page - Configure Ollama model and OpenAI API key
 - [x] Export Module - Export reports to PDF or Excel
 - [x] Daily/Weekly/Monthly report export with filters by Division/Scheme/PumpHouse
 - [x] Data Backup Module - Backup and restore data locally
+- [x] Failed import messages - Add to log directly
 - [x] WhatsApp Chat Import feature - Export chat from WhatsApp and import
 - [x] Bengali/English message parser with keyword detection
 - [x] Phone number to pump house mapping
@@ -28,6 +30,7 @@
 | `src/app/monthly/page.tsx` | Monthly Report | ✅ |
 | `src/app/export/page.tsx` | Export Reports (PDF/Excel) | ✅ |
 | `src/app/backup/page.tsx` | Data Backup/Restore | ✅ |
+| `src/app/settings/page.tsx` | Settings (LLM config) | ✅ |
 | `src/app/import/page.tsx` | WhatsApp Import | ✅ |
 | `src/app/log/page.tsx` | Manual Log Entry | ✅ |
 | `src/app/master/page.tsx` | Master Data Management | ✅ |

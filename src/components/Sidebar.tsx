@@ -12,6 +12,7 @@ const navItems = [
   { href: "/log", label: "Manual Log", icon: "⏱️" },
   { href: "/master", label: "Master Data", icon: "⚙️" },
   { href: "/backup", label: "Backup", icon: "💾" },
+  { href: "/settings", label: "Settings", icon: "🔧" },
 ];
 
 export default function Sidebar() {
