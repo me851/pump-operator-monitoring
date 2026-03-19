@@ -247,29 +247,21 @@ export async function translateToEnglish(text: string): Promise<string> {
   if (!isBengali) return text;
 
   const settings = getSettings();
-  const OLLAMA_BASE_URL = settings.ollamaBaseUrl || "http://localhost:11434";
-  const OLLAMA_MODEL = settings.ollamaModel || "llama3.2";
-  const OPENAI_API_KEY = settings.openaiApiKey || "";
+  const { provider, ollamaBaseUrl, ollamaModel, openaiApiKey, openrouterApiKey } = settings;
 
-  // Try Ollama first (local, free)
-  if (OLLAMA_BASE_URL) {
+  const systemPrompt = "You are a Bengali to English translator. Translate the following Bengali text to English accurately. Only respond with the translation, nothing else.";
+
+  if (provider === "ollama") {
+    const url = ollamaBaseUrl || "http://localhost:11434";
     try {
-      const response = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
+      const response = await fetch(`${url}/api/chat`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: OLLAMA_MODEL,
+          model: ollamaModel || "llama3.2",
           messages: [
-            {
-              role: "system",
-              content: "You are a Bengali to English translator. Translate the following Bengali text to English accurately. Only respond with the translation, nothing else."
-            },
-            {
-              role: "user",
-              content: text
-            }
+            { role: "system", content: systemPrompt },
+            { role: "user", content: text }
           ],
           stream: false,
         }),
@@ -284,26 +276,47 @@ export async function translateToEnglish(text: string): Promise<string> {
     }
   }
 
-  // Fallback to OpenAI if available
-  if (OPENAI_API_KEY) {
+  if (provider === "openrouter" && openrouterApiKey) {
+    try {
+      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${openrouterApiKey}`,
+          "HTTP-Referer": typeof window !== "undefined" ? window.location.origin : "",
+          "X-Title": "AquaLog",
+        },
+        body: JSON.stringify({
+          model: ollamaModel || "google/gemma-3-4b-it:free",
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: text }
+          ],
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        return data.choices?.[0]?.message?.content?.trim() || text;
+      }
+    } catch (error) {
+      console.error("OpenRouter translation error:", error);
+    }
+  }
+
+  if (provider === "openai" && openaiApiKey) {
     try {
       const response = await fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${OPENAI_API_KEY}`,
+          "Authorization": `Bearer ${openaiApiKey}`,
         },
         body: JSON.stringify({
           model: "gpt-4o-mini",
           messages: [
-            {
-              role: "system",
-              content: "You are a Bengali to English translator. Translate the following Bengali text to English accurately. Preserve the meaning and nuance. Only respond with the translation, nothing else."
-            },
-            {
-              role: "user",
-              content: text
-            }
+            { role: "system", content: systemPrompt },
+            { role: "user", content: text }
           ],
           max_tokens: 1000,
         }),

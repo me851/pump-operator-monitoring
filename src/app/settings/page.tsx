@@ -1,29 +1,28 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { getSettings, saveSettings, AppSettings } from "@/lib/storage";
+import { getSettings, saveSettings, AppSettings, TranslationProvider } from "@/lib/storage";
 
 interface OllamaModel {
   name: string;
   model: string;
 }
 
-const DEFAULT_SERVERS = [
-  { label: "Local", host: "localhost", port: "11434" },
-  { label: "OpenClaw (Free)", host: "openclaw.ollama.ai", port: "" },
-  { label: "Ollama Cloud", host: "cloud.ollama.ai", port: "" },
-];
+const PROVIDERS = [
+  { value: "ollama", label: "Ollama", description: "Local or remote Ollama server" },
+  { value: "openrouter", label: "OpenRouter", description: "Access 200+ models via API" },
+  { value: "openai", label: "OpenAI", description: "GPT models (paid)" },
+] as const;
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<AppSettings>({
+    provider: "ollama",
     ollamaBaseUrl: "http://localhost:11434",
     ollamaModel: "llama3.2",
     openaiApiKey: "",
+    openrouterApiKey: "",
   });
   
-  const [serverType, setServerType] = useState<"local" | "cloud">("local");
-  const [customHost, setCustomHost] = useState("");
-  const [customPort, setCustomPort] = useState("11434");
   const [saved, setSaved] = useState(false);
   
   const [isConnected, setIsConnected] = useState(false);
@@ -37,50 +36,73 @@ export default function SettingsPage() {
   useEffect(() => {
     const loaded = getSettings();
     setSettings(loaded);
-    
-    if (loaded.ollamaBaseUrl.includes("localhost")) {
-      setServerType("local");
-      const url = new URL(loaded.ollamaBaseUrl);
-      setCustomHost(url.hostname);
-      setCustomPort(url.port || "11434");
-    } else {
-      setServerType("cloud");
-      setCustomHost(loaded.ollamaBaseUrl.replace(/^https?:\/\//, ""));
-    }
   }, []);
 
-  const getBaseUrl = (): string => {
-    if (serverType === "local") {
-      return `http://${customHost}:${customPort}`;
-    }
-    if (customHost.includes("://")) {
-      return customHost;
-    }
-    return `https://${customHost}`;
-  };
-
   const testConnection = async () => {
-    const url = getBaseUrl();
     setIsConnecting(true);
-    setStatusMessage("Connecting to server...");
+    setStatusMessage("Testing connection...");
     setStatusType("info");
     setIsConnected(false);
     setAvailableModels([]);
 
     try {
-      const response = await fetch(`${url}/api/tags`);
-      if (response.ok) {
-        setIsConnected(true);
-        setStatusMessage("Connected successfully!");
-        setStatusType("success");
-        setSettings(s => ({ ...s, ollamaBaseUrl: url }));
-        loadModels(url);
-      } else {
-        setStatusMessage(`Connection failed: ${response.status}`);
-        setStatusType("error");
+      if (settings.provider === "ollama") {
+        const url = settings.ollamaBaseUrl || "http://localhost:11434";
+        const response = await fetch(`${url}/api/tags`);
+        if (response.ok) {
+          setIsConnected(true);
+          setStatusMessage("Connected to Ollama!");
+          setStatusType("success");
+          loadModels(url);
+        } else {
+          setStatusMessage(`Connection failed: ${response.status}`);
+          setStatusType("error");
+        }
+      } else if (settings.provider === "openrouter") {
+        if (!settings.openrouterApiKey) {
+          setStatusMessage("Please enter your OpenRouter API key");
+          setStatusType("error");
+          setIsConnecting(false);
+          return;
+        }
+        const response = await fetch("https://openrouter.ai/api/v1/models", {
+          headers: { "Authorization": `Bearer ${settings.openrouterApiKey}` }
+        });
+        if (response.ok) {
+          const data = await response.json();
+          const models = (data.data || []).slice(0, 50);
+          setAvailableModels(models.map((m: { id: string }) => ({ name: m.id, model: m.id })));
+          setIsConnected(true);
+          setStatusMessage("Connected to OpenRouter!");
+          setStatusType("success");
+        } else {
+          setStatusMessage("Invalid OpenRouter API key");
+          setStatusType("error");
+        }
+      } else if (settings.provider === "openai") {
+        if (!settings.openaiApiKey) {
+          setStatusMessage("Please enter your OpenAI API key");
+          setStatusType("error");
+          setIsConnecting(false);
+          return;
+        }
+        const response = await fetch("https://api.openai.com/v1/models", {
+          headers: { "Authorization": `Bearer ${settings.openaiApiKey}` }
+        });
+        if (response.ok) {
+          const data = await response.json();
+          const models = (data.data || []).filter((m: { id: string }) => m.id.startsWith("gpt")).slice(0, 20);
+          setAvailableModels(models.map((m: { id: string }) => ({ name: m.id, model: m.id })));
+          setIsConnected(true);
+          setStatusMessage("Connected to OpenAI!");
+          setStatusType("success");
+        } else {
+          setStatusMessage("Invalid OpenAI API key");
+          setStatusType("error");
+        }
       }
-    } catch (err) {
-      setStatusMessage("Connection failed. Server unreachable.");
+    } catch {
+      setStatusMessage("Connection failed. Check settings.");
       setStatusType("error");
     }
     
@@ -93,8 +115,7 @@ export default function SettingsPage() {
       const response = await fetch(`${url}/api/tags`);
       if (response.ok) {
         const data = await response.json();
-        const models = (data.models || []) as OllamaModel[];
-        setAvailableModels(models);
+        setAvailableModels((data.models || []) as OllamaModel[]);
       }
     } catch {
       console.error("Failed to load models");
@@ -103,8 +124,7 @@ export default function SettingsPage() {
   };
 
   const handleSave = () => {
-    const url = getBaseUrl();
-    saveSettings({ ...settings, ollamaBaseUrl: url });
+    saveSettings(settings);
     setSaved(true);
     setTimeout(() => setSaved(false), 3000);
   };
@@ -117,152 +137,178 @@ export default function SettingsPage() {
       </div>
 
       <div className="card mb-6">
-        <h2 className="text-lg font-semibold mb-4">Server Connection</h2>
+        <h2 className="text-lg font-semibold mb-4">Select Provider</h2>
         
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-          <div>
-            <label className="label">Server Type</label>
-            <select
-              className="select"
-              value={serverType}
-              onChange={(e) => {
-                setServerType(e.target.value as "local" | "cloud");
+          {PROVIDERS.map((provider) => (
+            <div
+              key={provider.value}
+              onClick={() => {
+                setSettings(s => ({ ...s, provider: provider.value as TranslationProvider }));
                 setIsConnected(false);
                 setAvailableModels([]);
-                if (e.target.value === "local") {
-                  setCustomHost("localhost");
-                  setCustomPort("11434");
-                } else {
-                  setCustomHost("openclaw.ollama.ai");
-                  setCustomPort("");
-                }
               }}
+              className={`p-4 rounded-lg border-2 cursor-pointer transition-all ${
+                settings.provider === provider.value
+                  ? "border-cyan-500 bg-cyan-50"
+                  : "border-slate-200 hover:border-slate-300"
+              }`}
             >
-              <option value="local">Local (Your Computer)</option>
-              <option value="cloud">Cloud (Remote)</option>
-            </select>
-          </div>
+              <h3 className="font-semibold">{provider.label}</h3>
+              <p className="text-xs text-slate-500 mt-1">{provider.description}</p>
+            </div>
+          ))}
+        </div>
+      </div>
 
-          <div>
-            <label className="label">
-              {serverType === "local" ? "Host Address" : "Server URL"}
-            </label>
-            <input
-              type="text"
-              className="input"
-              value={customHost}
-              onChange={(e) => {
-                setCustomHost(e.target.value);
-                setIsConnected(false);
-                setAvailableModels([]);
-              }}
-              placeholder={serverType === "local" ? "localhost" : "openclaw.ollama.ai"}
-            />
-          </div>
-
-          {serverType === "local" && (
+      {settings.provider === "ollama" && (
+        <div className="card mb-6">
+          <h2 className="text-lg font-semibold mb-4">Ollama Server</h2>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
             <div>
-              <label className="label">Port</label>
+              <label className="label">Server URL</label>
               <input
                 type="text"
                 className="input"
-                value={customPort}
+                value={settings.ollamaBaseUrl}
                 onChange={(e) => {
-                  setCustomPort(e.target.value);
+                  setSettings(s => ({ ...s, ollamaBaseUrl: e.target.value }));
                   setIsConnected(false);
                   setAvailableModels([]);
                 }}
-                placeholder="11434"
+                placeholder="http://localhost:11434"
               />
+              <p className="text-xs text-slate-500 mt-1">
+                Local: localhost:11434 | Cloud: openclaw.ollama.ai
+              </p>
             </div>
-          )}
+          </div>
+        </div>
+      )}
+
+      {settings.provider === "openrouter" && (
+        <div className="card mb-6">
+          <h2 className="text-lg font-semibold mb-4">OpenRouter Settings</h2>
+          
+          <div className="mb-4">
+            <label className="label">OpenRouter API Key</label>
+            <input
+              type="password"
+              className="input"
+              value={settings.openrouterApiKey}
+              onChange={(e) => {
+                setSettings(s => ({ ...s, openrouterApiKey: e.target.value }));
+                setIsConnected(false);
+                setAvailableModels([]);
+              }}
+              placeholder="sk-or-..."
+            />
+            <p className="text-xs text-slate-500 mt-1">
+              Get free API key from{" "}
+              <a href="https://openrouter.ai" target="_blank" rel="noopener" className="text-cyan-600 underline">
+                openrouter.ai
+              </a>
+            </p>
+          </div>
+
+          <div className="bg-green-50 p-4 rounded-lg">
+            <h3 className="font-medium text-green-800 mb-2">Free Models on OpenRouter</h3>
+            <ul className="text-sm text-green-700 space-y-1">
+              <li>• google/gemma-3-4b-it:free</li>
+              <li>• deepseek/deepseek-r1:free</li>
+              <li>• qwen/qwen2.5-72b-instruct:free</li>
+              <li>• meta-llama/llama-3.1-8b-instruct:free</li>
+              <li>• mistralai/mistral-7b-instruct:free</li>
+            </ul>
+          </div>
+        </div>
+      )}
+
+      {settings.provider === "openai" && (
+        <div className="card mb-6">
+          <h2 className="text-lg font-semibold mb-4">OpenAI Settings</h2>
+          
+          <div className="mb-4">
+            <label className="label">OpenAI API Key</label>
+            <input
+              type="password"
+              className="input"
+              value={settings.openaiApiKey}
+              onChange={(e) => {
+                setSettings(s => ({ ...s, openaiApiKey: e.target.value }));
+                setIsConnected(false);
+                setAvailableModels([]);
+              }}
+              placeholder="sk-..."
+            />
+            <p className="text-xs text-slate-500 mt-1">
+              Get API key from{" "}
+              <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener" className="text-cyan-600 underline">
+                platform.openai.com
+              </a>
+            </p>
+          </div>
+        </div>
+      )}
+
+      <div className="card mb-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold">Model Selection</h2>
+          <button
+            onClick={testConnection}
+            disabled={isConnecting}
+            className="btn btn-primary"
+          >
+            {isConnecting ? "Testing..." : "Test & Load Models"}
+          </button>
         </div>
 
-        <button
-          onClick={testConnection}
-          disabled={isConnecting || !customHost}
-          className="btn btn-primary"
-        >
-          {isConnecting ? "Connecting..." : isConnected ? "Reconnect" : "Connect"}
-        </button>
-
         {statusMessage && (
-          <p className={`mt-3 text-sm ${
+          <p className={`mb-4 text-sm ${
             statusType === "success" ? "text-green-600" :
             statusType === "error" ? "text-red-600" : "text-blue-600"
           }`}>
             {statusMessage}
           </p>
         )}
-      </div>
 
-      {isConnected && (
-        <div className="card mb-6">
-          <h2 className="text-lg font-semibold mb-4">Select Model</h2>
-          
-          {isLoadingModels ? (
-            <p className="text-slate-500">Loading available models...</p>
-          ) : availableModels.length > 0 ? (
-            <div>
-              <label className="label">Available Models on Server</label>
-              <select
-                className="select"
-                value={settings.ollamaModel}
-                onChange={(e) => setSettings(s => ({ ...s, ollamaModel: e.target.value }))}
-              >
-                {availableModels.map((model) => (
-                  <option key={model.name} value={model.name}>
-                    {model.name}
-                  </option>
-                ))}
-              </select>
-              <p className="text-xs text-slate-500 mt-2">
-                {availableModels.length} model(s) available on this server
-              </p>
-            </div>
-          ) : (
-            <div>
-              <p className="text-amber-600 mb-3">No models found on server. Enter model name manually:</p>
-              <label className="label">Model Name</label>
-              <input
-                type="text"
-                className="input"
-                value={settings.ollamaModel}
-                onChange={(e) => setSettings(s => ({ ...s, ollamaModel: e.target.value }))}
-                placeholder="llama3.2, kimi-k2.5, etc."
-              />
-            </div>
-          )}
-        </div>
-      )}
-
-      <div className="card mb-6">
-        <h2 className="text-lg font-semibold mb-4">Fallback Settings</h2>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className="label">OpenAI API Key (Optional)</label>
-            <input
-              type="password"
-              className="input"
-              value={settings.openaiApiKey}
-              onChange={(e) => setSettings(s => ({ ...s, openaiApiKey: e.target.value }))}
-              placeholder="sk-..."
-            />
-            <p className="text-xs text-slate-500 mt-1">
-              Used when Ollama is unavailable
-            </p>
-          </div>
-          
-          <div className="bg-slate-50 p-4 rounded-lg">
-            <h3 className="font-medium mb-2">Translation Priority</h3>
-            <ol className="text-sm text-slate-600 space-y-1">
-              <li>1. Ollama ({serverType === "local" ? "Local" : "Cloud"})</li>
-              <li>2. OpenAI (if API key provided)</li>
-              <li>3. Basic keyword translation</li>
-            </ol>
-          </div>
-        </div>
+        {isConnected && (
+          <>
+            {isLoadingModels ? (
+              <p className="text-slate-500">Loading models...</p>
+            ) : availableModels.length > 0 ? (
+              <div>
+                <label className="label">Select Model</label>
+                <select
+                  className="select"
+                  value={settings.ollamaModel}
+                  onChange={(e) => setSettings(s => ({ ...s, ollamaModel: e.target.value }))}
+                >
+                  {availableModels.map((model) => (
+                    <option key={model.name} value={model.name}>
+                      {model.name}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-slate-500 mt-2">
+                  {availableModels.length} model(s) available
+                </p>
+              </div>
+            ) : (
+              <div>
+                <label className="label">Model Name</label>
+                <input
+                  type="text"
+                  className="input"
+                  value={settings.ollamaModel}
+                  onChange={(e) => setSettings(s => ({ ...s, ollamaModel: e.target.value }))}
+                  placeholder="llama3.2, gemma3, etc."
+                />
+              </div>
+            )}
+          </>
+        )}
       </div>
 
       <div className="flex items-center gap-4">
@@ -274,20 +320,29 @@ export default function SettingsPage() {
         )}
       </div>
 
-      {isConnected && (
-        <div className="card mt-6">
-          <h2 className="text-lg font-semibold mb-2">Quick Tips</h2>
-          <div className="text-sm text-slate-600 space-y-2">
-            <p>
-              <strong>For free cloud translation:</strong> Use OpenClaw server ({customHost.includes("openclaw") ? "already selected" : "enter: openclaw.ollama.ai"}) 
-              with model: <code>kimi-k2.5</code> or <code>glm-5</code>
-            </p>
-            <p>
-              <strong>For local:</strong> Install Ollama from ollama.com, then run: <code>ollama pull llama3.2</code>
-            </p>
+      <div className="card mt-6">
+        <h2 className="text-lg font-semibold mb-2">Quick Setup</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+          <div className="bg-purple-50 p-4 rounded-lg">
+            <h3 className="font-medium text-purple-800 mb-2">Option 1: OpenRouter (Recommended - Free)</h3>
+            <ol className="text-purple-700 space-y-1 text-xs">
+              <li>1. Select: <strong>OpenRouter</strong> provider</li>
+              <li>2. Get free key from openrouter.ai</li>
+              <li>3. Enter API key</li>
+              <li>4. Model: <code>google/gemma-3-4b-it:free</code></li>
+            </ol>
+          </div>
+          <div className="bg-blue-50 p-4 rounded-lg">
+            <h3 className="font-medium text-blue-800 mb-2">Option 2: Local Ollama</h3>
+            <ol className="text-blue-700 space-y-1 text-xs">
+              <li>1. Select: <strong>Ollama</strong> provider</li>
+              <li>2. Server: <code>localhost:11434</code></li>
+              <li>3. Install from ollama.com</li>
+              <li>4. Run: <code>ollama pull llama3.2</code></li>
+            </ol>
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }

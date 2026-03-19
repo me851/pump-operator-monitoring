@@ -233,16 +233,22 @@ export function initializeSampleData(): void {
   savePhoneMapping({ pumpHouseId: pumpHouses[2].id, phoneNumber: "+919000333333", operatorName: "Mahesh" });
 }
 
+export type TranslationProvider = "ollama" | "openrouter" | "openai";
+
 export interface AppSettings {
+  provider: TranslationProvider;
   ollamaBaseUrl: string;
   ollamaModel: string;
   openaiApiKey: string;
+  openrouterApiKey: string;
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
+  provider: "ollama",
   ollamaBaseUrl: "http://localhost:11434",
   ollamaModel: "llama3.2",
   openaiApiKey: "",
+  openrouterApiKey: "",
 };
 
 export function getSettings(): AppSettings {
