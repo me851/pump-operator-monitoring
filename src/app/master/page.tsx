@@ -429,6 +429,8 @@ function PumpHouseTab({ pumpHouses, schemes, onSave, onUpdate, onDelete, editing
   );
 }
 
+const MAX_PHONE_NUMBERS = 4;
+
 function PhoneMappingTab({ phoneMappings, pumpHouses, schemes, divisions, onSave, onUpdate, onDelete, editingItem, setEditingItem, isAdding, setIsAdding, getPumpHouseName, getSchemeName, getDivisionName }: any) {
   const [phoneNumber, setPhoneNumber] = useState("");
   const [pumpHouseId, setPumpHouseId] = useState("");
@@ -436,18 +438,26 @@ function PhoneMappingTab({ phoneMappings, pumpHouses, schemes, divisions, onSave
 
   useEffect(() => {
     if (editingItem) {
-      setPhoneNumber(editingItem.phoneNumber);
-      setPumpHouseId(editingItem.pumpHouseId);
-      setOperatorName(editingItem.operatorName || "");
+      setPhoneNumber("");
+      setPumpHouseId(editingItem.id || "");
+      setOperatorName("");
     } else if (isAdding) {
       setPhoneNumber("");
-      setPumpHouseId(pumpHouses[0]?.id || "");
+      setPumpHouseId("");
       setOperatorName("");
     }
-  }, [editingItem, isAdding, pumpHouses]);
+  }, [editingItem, isAdding]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!phoneNumber || !pumpHouseId) return;
+    
+    const existingCount = phoneMappings.filter((pm: PhoneMapping) => pm.pumpHouseId === pumpHouseId).length;
+    if (existingCount >= MAX_PHONE_NUMBERS) {
+      alert(`Maximum ${MAX_PHONE_NUMBERS} phone numbers allowed per pump house`);
+      return;
+    }
+    
     if (editingItem) {
       onUpdate({ ...editingItem, phoneNumber, pumpHouseId, operatorName: operatorName || undefined });
     } else {
@@ -455,13 +465,7 @@ function PhoneMappingTab({ phoneMappings, pumpHouses, schemes, divisions, onSave
     }
     setPhoneNumber("");
     setOperatorName("");
-  };
-
-  const getDetails = (pumpHouseId: string) => {
-    const ph = pumpHouses.find((p: PumpHouse) => p.id === pumpHouseId);
-    const sc = schemes.find((s: Scheme) => s.id === ph?.schemeId);
-    const div = sc ? divisions.find((d: Division) => d.id === sc.divisionId) : null;
-    return { pumpHouse: ph, scheme: sc, division: div };
+    setIsAdding(false);
   };
 
   return (
@@ -469,6 +473,10 @@ function PhoneMappingTab({ phoneMappings, pumpHouses, schemes, divisions, onSave
       <div className="flex justify-between items-center mb-4">
         <h2 className="text-lg font-semibold">Phone Number Mappings</h2>
         <button onClick={() => setIsAdding(true)} className="btn btn-primary">+ Add Phone Number</button>
+      </div>
+
+      <div className="mb-4 p-3 bg-blue-50 rounded-lg text-sm text-blue-700">
+        💡 <strong>Important:</strong> Map operator phone numbers to pump houses. Maximum {MAX_PHONE_NUMBERS} phone numbers allowed per pump house.
       </div>
 
       <div className="mb-4 p-3 bg-blue-50 rounded-lg text-sm text-blue-700">
@@ -545,7 +553,8 @@ function PhoneMappingTab({ phoneMappings, pumpHouses, schemes, divisions, onSave
                 </td>
                 <td>{division?.name || "Unknown"}</td>
                 <td>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-wrap gap-2 items-center">
+                    <span className="text-xs text-slate-400 mr-1">{mappings.length}/{MAX_PHONE_NUMBERS}</span>
                     {mappings.length === 0 ? (
                       <span className="text-slate-400 text-sm italic">No phone numbers</span>
                     ) : (
@@ -566,15 +575,19 @@ function PhoneMappingTab({ phoneMappings, pumpHouses, schemes, divisions, onSave
                   </div>
                 </td>
                 <td>
-                  <button 
-                    onClick={() => {
-                      setEditingItem(p);
-                      setIsAdding(true);
-                    }} 
-                    className="btn btn-secondary text-sm"
-                  >
-                    + Add Number
-                  </button>
+                  {mappings.length >= MAX_PHONE_NUMBERS ? (
+                    <span className="text-xs text-slate-400 italic">Limit reached</span>
+                  ) : (
+                    <button 
+                      onClick={() => {
+                        setEditingItem(p);
+                        setIsAdding(true);
+                      }} 
+                      className="btn btn-secondary text-sm"
+                    >
+                      + Add Number
+                    </button>
+                  )}
                 </td>
               </tr>
             );
