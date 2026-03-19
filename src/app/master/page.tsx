@@ -468,11 +468,11 @@ function PhoneMappingTab({ phoneMappings, pumpHouses, schemes, divisions, onSave
     <div className="card">
       <div className="flex justify-between items-center mb-4">
         <h2 className="text-lg font-semibold">Phone Number Mappings</h2>
-        <button onClick={() => setIsAdding(true)} className="btn btn-primary">+ Add Phone Mapping</button>
+        <button onClick={() => setIsAdding(true)} className="btn btn-primary">+ Add Phone Number</button>
       </div>
 
       <div className="mb-4 p-3 bg-blue-50 rounded-lg text-sm text-blue-700">
-        💡 <strong>Important:</strong> Map operator phone numbers to pump houses. When messages are imported, the system will automatically identify which pump house the message is from based on the phone number.
+        💡 <strong>Important:</strong> Map operator phone numbers to pump houses. When messages are imported, the system will automatically identify which pump house the message is from based on the phone number. Multiple phone numbers can be added for each pump house.
       </div>
 
       {isAdding && (
@@ -486,13 +486,20 @@ function PhoneMappingTab({ phoneMappings, pumpHouses, schemes, divisions, onSave
               onChange={(e) => setPhoneNumber(e.target.value)}
             />
             <select
-              className="select w-48"
+              className="select w-72"
               value={pumpHouseId}
               onChange={(e) => setPumpHouseId(e.target.value)}
             >
-              {pumpHouses.map((p: PumpHouse) => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
+              <option value="">Select Pump House</option>
+              {pumpHouses.map((p: PumpHouse) => {
+                const scheme = schemes.find((s: Scheme) => s.id === p.schemeId);
+                const division = scheme ? divisions.find((d: Division) => d.id === scheme.divisionId) : null;
+                return (
+                  <option key={p.id} value={p.id}>
+                    {scheme?.name || "Unknown"} - {p.name} ({division?.name || "Unknown"})
+                  </option>
+                );
+              })}
             </select>
           </div>
           <div className="flex gap-2">
@@ -512,59 +519,59 @@ function PhoneMappingTab({ phoneMappings, pumpHouses, schemes, divisions, onSave
       <table className="table">
         <thead>
           <tr>
-            <th>Pump House</th>
-            <th>Phone Numbers (Multiple)</th>
+            <th>Scheme - Pump House</th>
+            <th>Division</th>
+            <th>Phone Numbers</th>
             <th>Actions</th>
           </tr>
         </thead>
         <tbody>
-          {Object.entries(
-            phoneMappings.reduce((acc: Record<string, { pumpHouse: typeof pumpHouses[0]; mappings: typeof phoneMappings }>, pm: PhoneMapping) => {
-              if (!acc[pm.pumpHouseId]) {
-                const ph = pumpHouses.find((p: PumpHouse) => p.id === pm.pumpHouseId);
-                acc[pm.pumpHouseId] = { pumpHouse: ph!, mappings: [] };
-              }
-              acc[pm.pumpHouseId].mappings.push(pm);
-              return acc;
-            }, {})
-          ).map(([pumpHouseId, data]: [string, any]) => (
-            <tr key={pumpHouseId}>
-              <td>
-                <div className="font-medium">{data.pumpHouse?.name || "Unknown"}</div>
-                <div className="text-xs text-slate-500">
-                  {getDetails(pumpHouseId).scheme?.name} • {getDetails(pumpHouseId).division?.name}
-                </div>
-              </td>
-              <td>
-                <div className="flex flex-wrap gap-2">
-                  {data.mappings.map((pm: PhoneMapping) => (
-                    <span key={pm.id} className="inline-flex items-center gap-1 bg-slate-100 px-2 py-1 rounded text-sm">
-                      <span className="font-mono">{pm.phoneNumber}</span>
-                      {pm.operatorName && <span className="text-slate-500">({pm.operatorName})</span>}
-                      <button 
-                        onClick={() => onDelete(pm.id)} 
-                        className="text-red-500 hover:text-red-700 ml-1"
-                        title="Delete"
-                      >
-                        ×
-                      </button>
-                    </span>
-                  ))}
-                </div>
-              </td>
-              <td>
-                <button 
-                  onClick={() => {
-                    setEditingItem({ pumpHouseId });
-                    setIsAdding(true);
-                  }} 
-                  className="btn btn-secondary text-sm"
-                >
-                  + Add Number
-                </button>
-              </td>
-            </tr>
-          ))}
+          {pumpHouses.map((p: PumpHouse) => {
+            const scheme = schemes.find((s: Scheme) => s.id === p.schemeId);
+            const division = scheme ? divisions.find((d: Division) => d.id === scheme.divisionId) : null;
+            const mappings = phoneMappings.filter((pm: PhoneMapping) => pm.pumpHouseId === p.id);
+            
+            return (
+              <tr key={p.id}>
+                <td>
+                  <div className="font-medium">{scheme?.name || "Unknown"} - {p.name}</div>
+                </td>
+                <td>{division?.name || "Unknown"}</td>
+                <td>
+                  <div className="flex flex-wrap gap-2">
+                    {mappings.length === 0 ? (
+                      <span className="text-slate-400 text-sm italic">No phone numbers</span>
+                    ) : (
+                      mappings.map((pm: PhoneMapping) => (
+                        <span key={pm.id} className="inline-flex items-center gap-1 bg-slate-100 px-2 py-1 rounded text-sm">
+                          <span className="font-mono">{pm.phoneNumber}</span>
+                          {pm.operatorName && <span className="text-slate-500">({pm.operatorName})</span>}
+                          <button 
+                            onClick={() => onDelete(pm.id)} 
+                            className="text-red-500 hover:text-red-700 ml-1"
+                            title="Delete"
+                          >
+                            ×
+                          </button>
+                        </span>
+                      ))
+                    )}
+                  </div>
+                </td>
+                <td>
+                  <button 
+                    onClick={() => {
+                      setEditingItem(p);
+                      setIsAdding(true);
+                    }} 
+                    className="btn btn-secondary text-sm"
+                  >
+                    + Add Number
+                  </button>
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
