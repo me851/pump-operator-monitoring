@@ -6,6 +6,9 @@
 
 ## Recently Completed
 
+- [x] Export Module - Export reports to PDF or Excel
+- [x] Daily/Weekly/Monthly report export with filters by Division/Scheme/PumpHouse
+- [x] Data Backup Module - Backup and restore data locally
 - [x] WhatsApp Chat Import feature - Export chat from WhatsApp and import
 - [x] Bengali/English message parser with keyword detection
 - [x] Phone number to pump house mapping
@@ -23,12 +26,16 @@
 | `src/app/page.tsx` | Daily Dashboard | ✅ |
 | `src/app/weekly/page.tsx` | Weekly Report | ✅ |
 | `src/app/monthly/page.tsx` | Monthly Report | ✅ |
+| `src/app/export/page.tsx` | Export Reports (PDF/Excel) | ✅ |
+| `src/app/backup/page.tsx` | Data Backup/Restore | ✅ |
 | `src/app/import/page.tsx` | WhatsApp Import | ✅ |
 | `src/app/log/page.tsx` | Manual Log Entry | ✅ |
 | `src/app/master/page.tsx` | Master Data Management | ✅ |
 | `src/app/chat/page.tsx` | Web Chat Interface | ✅ |
 | `src/lib/storage.ts` | localStorage utilities | ✅ |
 | `src/lib/parser.ts` | Message parser | ✅ |
+| `src/lib/export.ts` | PDF/Excel export utilities | ✅ |
+| `src/lib/backup.ts` | Backup/restore utilities | ✅ |
 | `src/types/index.ts` | TypeScript types | ✅ |
 
 ## How It Works
@@ -54,3 +61,4 @@ The application is complete. TypeScript passes, minor lint warnings exist for Re
 | Date | Changes |
 |------|---------|
 | Initial | Created pump operation dashboard with WhatsApp import |
+| Current | Added Export module (PDF/Excel) and Data Backup module |

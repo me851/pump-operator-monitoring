@@ -40,6 +40,9 @@ export interface PumpOperation {
 }
 
 export interface PumpOperationWithDetails extends PumpOperation {
+  divisionId: string;
+  schemeId: string;
+  pumpHouseId: string;
   divisionName: string;
   schemeName: string;
   pumpHouseName: string;

@@ -7,9 +7,11 @@ const navItems = [
   { href: "/", label: "Daily Dashboard", icon: "📊" },
   { href: "/weekly", label: "Weekly Report", icon: "📅" },
   { href: "/monthly", label: "Monthly Report", icon: "📈" },
+  { href: "/export", label: "Export", icon: "📤" },
   { href: "/import", label: "Import WhatsApp", icon: "📥" },
   { href: "/log", label: "Manual Log", icon: "⏱️" },
   { href: "/master", label: "Master Data", icon: "⚙️" },
+  { href: "/backup", label: "Backup", icon: "💾" },
 ];
 
 export default function Sidebar() {

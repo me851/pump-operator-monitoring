@@ -54,6 +54,9 @@ export default function WeeklyPage() {
         
         return {
           ...op,
+          divisionId: division?.id || "",
+          schemeId: scheme.id,
+          pumpHouseId: pumpHouse.id,
           divisionName: division?.name || "Unknown",
           schemeName: scheme.name,
           pumpHouseName: pumpHouse.name,
