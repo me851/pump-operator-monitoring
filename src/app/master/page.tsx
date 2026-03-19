@@ -512,32 +512,59 @@ function PhoneMappingTab({ phoneMappings, pumpHouses, schemes, divisions, onSave
       <table className="table">
         <thead>
           <tr>
-            <th>Phone Number</th>
             <th>Pump House</th>
-            <th>Operator</th>
+            <th>Phone Numbers (Multiple)</th>
             <th>Actions</th>
           </tr>
         </thead>
         <tbody>
-          {phoneMappings.map((pm: PhoneMapping) => {
-            const details = getDetails(pm.pumpHouseId);
-            return (
-              <tr key={pm.id}>
-                <td className="font-mono">{pm.phoneNumber}</td>
-                <td>
-                  <div>{details.pumpHouse?.name}</div>
-                  <div className="text-xs text-slate-500">{details.scheme?.name} • {details.division?.name}</div>
-                </td>
-                <td>{pm.operatorName || "-"}</td>
-                <td>
-                  <div className="flex gap-2">
-                    <button onClick={() => setEditingItem(pm)} className="text-cyan-600 text-sm">Edit</button>
-                    <button onClick={() => onDelete(pm.id)} className="text-red-600 text-sm">Delete</button>
-                  </div>
-                </td>
-              </tr>
-            );
-          })}
+          {Object.entries(
+            phoneMappings.reduce((acc: Record<string, { pumpHouse: typeof pumpHouses[0]; mappings: typeof phoneMappings }>, pm: PhoneMapping) => {
+              if (!acc[pm.pumpHouseId]) {
+                const ph = pumpHouses.find((p: PumpHouse) => p.id === pm.pumpHouseId);
+                acc[pm.pumpHouseId] = { pumpHouse: ph!, mappings: [] };
+              }
+              acc[pm.pumpHouseId].mappings.push(pm);
+              return acc;
+            }, {})
+          ).map(([pumpHouseId, data]: [string, any]) => (
+            <tr key={pumpHouseId}>
+              <td>
+                <div className="font-medium">{data.pumpHouse?.name || "Unknown"}</div>
+                <div className="text-xs text-slate-500">
+                  {getDetails(pumpHouseId).scheme?.name} • {getDetails(pumpHouseId).division?.name}
+                </div>
+              </td>
+              <td>
+                <div className="flex flex-wrap gap-2">
+                  {data.mappings.map((pm: PhoneMapping) => (
+                    <span key={pm.id} className="inline-flex items-center gap-1 bg-slate-100 px-2 py-1 rounded text-sm">
+                      <span className="font-mono">{pm.phoneNumber}</span>
+                      {pm.operatorName && <span className="text-slate-500">({pm.operatorName})</span>}
+                      <button 
+                        onClick={() => onDelete(pm.id)} 
+                        className="text-red-500 hover:text-red-700 ml-1"
+                        title="Delete"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              </td>
+              <td>
+                <button 
+                  onClick={() => {
+                    setEditingItem({ pumpHouseId });
+                    setIsAdding(true);
+                  }} 
+                  className="btn btn-secondary text-sm"
+                >
+                  + Add Number
+                </button>
+              </td>
+            </tr>
+          ))}
         </tbody>
       </table>
     </div>

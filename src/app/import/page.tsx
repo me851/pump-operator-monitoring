@@ -14,10 +14,19 @@ interface ChatMessage {
   message: string;
 }
 
+interface FailedMessage {
+  date: string;
+  time: string;
+  phone: string;
+  message: string;
+  reason: string;
+}
+
 interface ImportResult {
   success: number;
   failed: number;
-  errors: string[];
+  failedMessages: FailedMessage[];
+  unknownPhones: { phone: string; count: number; sampleMessage: string }[];
 }
 
 export default function ImportPage() {
@@ -135,7 +144,9 @@ export default function ImportPage() {
   const processImport = async () => {
     setIsProcessing(true);
     setShowTranslation(true);
-    const result: ImportResult = { success: 0, failed: 0, errors: [] };
+    const result: ImportResult = { success: 0, failed: 0, failedMessages: [], unknownPhones: [] };
+    
+    const unknownPhoneMap = new Map<string, { count: number; sampleMessage: string }>();
     
     const existingOps = getOperations();
     const maxId = existingOps.reduce((max, op) => {
@@ -150,7 +161,12 @@ export default function ImportPage() {
       
       if (!mapping) {
         result.failed++;
-        result.errors.push(`Unknown phone: ${msg.phoneNumber} - "${msg.message.substring(0, 30)}"`);
+        const existing = unknownPhoneMap.get(msg.phoneNumber);
+        if (existing) {
+          existing.count++;
+        } else {
+          unknownPhoneMap.set(msg.phoneNumber, { count: 1, sampleMessage: msg.message.substring(0, 50) });
+        }
         continue;
       }
 
@@ -158,6 +174,13 @@ export default function ImportPage() {
       
       if (parsed.action === "unknown") {
         result.failed++;
+        result.failedMessages.push({
+          date: msg.date,
+          time: msg.time,
+          phone: msg.phoneNumber,
+          message: msg.message,
+          reason: "Could not understand message"
+        });
         continue;
       }
 
@@ -238,6 +261,11 @@ export default function ImportPage() {
       }
     }
 
+    result.unknownPhones = Array.from(unknownPhoneMap.entries()).map(([phone, data]) => ({
+      phone,
+      ...data
+    }));
+    
     localStorage.setItem("aqualog_operations", JSON.stringify(existingOps));
     setImportResult(result);
     setIsProcessing(false);
@@ -372,25 +400,83 @@ export default function ImportPage() {
       )}
 
       {importResult && (
-        <div className={`card mt-6 ${importResult.failed === 0 ? "border-green-500" : "border-amber-500"}`}>
-          <h3 className="font-semibold mb-2">
-            {importResult.failed === 0 ? "✅ Import Complete" : "⚠️ Import Completed with Issues"}
-          </h3>
-          <p className="text-sm">
-            Successfully processed: <span className="font-bold text-green-600">{importResult.success}</span> messages
-            {importResult.failed > 0 && (
-              <> • Failed: <span className="font-bold text-amber-600">{importResult.failed}</span></>
-            )}
-          </p>
-          {importResult.errors.length > 0 && (
-            <details className="mt-3">
-              <summary className="text-sm text-slate-600 cursor-pointer">View Errors</summary>
-              <ul className="text-xs text-slate-500 mt-2 space-y-1">
-                {importResult.errors.slice(0, 10).map((err, idx) => (
-                  <li key={idx}>{err}</li>
-                ))}
-              </ul>
-            </details>
+        <div className="space-y-4">
+          <div className={`card ${importResult.failed === 0 ? "border-green-500" : "border-amber-500"}`}>
+            <h3 className="font-semibold mb-2">
+              {importResult.failed === 0 ? "✅ Import Complete" : "⚠️ Import Completed with Issues"}
+            </h3>
+            <div className="flex gap-6">
+              <div>
+                <p className="text-sm text-slate-500">Successfully Imported</p>
+                <p className="text-2xl font-bold text-green-600">{importResult.success}</p>
+              </div>
+              <div>
+                <p className="text-sm text-slate-500">Failed / Not Imported</p>
+                <p className="text-2xl font-bold text-amber-600">{importResult.failed}</p>
+              </div>
+            </div>
+          </div>
+
+          {importResult.unknownPhones.length > 0 && (
+            <div className="card border-l-4 border-red-500">
+              <h3 className="font-semibold text-red-700 mb-3">⚠️ Unknown Phone Numbers - Need Registration</h3>
+              <p className="text-sm text-slate-600 mb-4">
+                These phone numbers are not registered. Go to Master Data → Phone Mappings to add them.
+              </p>
+              <div className="max-h-60 overflow-y-auto">
+                <table className="table text-sm">
+                  <thead>
+                    <tr>
+                      <th>Phone Number</th>
+                      <th>Messages Count</th>
+                      <th>Sample Message</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {importResult.unknownPhones.map((item, idx) => (
+                      <tr key={idx}>
+                        <td className="font-mono font-medium">{item.phone}</td>
+                        <td><span className="badge bg-red-100 text-red-700">{item.count}</span></td>
+                        <td className="text-slate-500">{item.sampleMessage}...</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {importResult.failedMessages.length > 0 && (
+            <div className="card border-l-4 border-amber-500">
+              <h3 className="font-semibold text-amber-700 mb-3">⚠️ Failed Messages - Need Manual Check</h3>
+              <p className="text-sm text-slate-600 mb-4">
+                These messages could not be understood. Review and add manually if needed.
+              </p>
+              <div className="max-h-60 overflow-y-auto">
+                <table className="table text-sm">
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Time</th>
+                      <th>Phone</th>
+                      <th>Message</th>
+                      <th>Reason</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {importResult.failedMessages.map((msg, idx) => (
+                      <tr key={idx}>
+                        <td>{msg.date}</td>
+                        <td>{msg.time}</td>
+                        <td className="font-mono">{msg.phone}</td>
+                        <td className="max-w-xs truncate">{msg.message}</td>
+                        <td><span className="badge bg-amber-100 text-amber-700">{msg.reason}</span></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           )}
         </div>
       )}
