@@ -239,6 +239,8 @@ export function parseWhatsAppMessage(
   return result;
 }
 
+const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || "http://localhost:11434";
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "llama3.2";
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 
 export async function translateToEnglish(text: string): Promise<string> {
@@ -247,6 +249,40 @@ export async function translateToEnglish(text: string): Promise<string> {
   const isBengali = /[\u0980-\u09FF]/.test(text);
   if (!isBengali) return text;
 
+  // Try Ollama first (local, free)
+  if (OLLAMA_BASE_URL) {
+    try {
+      const response = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: OLLAMA_MODEL,
+          messages: [
+            {
+              role: "system",
+              content: "You are a Bengali to English translator. Translate the following Bengali text to English accurately. Only respond with the translation, nothing else."
+            },
+            {
+              role: "user",
+              content: text
+            }
+          ],
+          stream: false,
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        return data.message?.content?.trim() || text;
+      }
+    } catch (error) {
+      console.error("Ollama translation error:", error);
+    }
+  }
+
+  // Fallback to OpenAI if available
   if (OPENAI_API_KEY) {
     try {
       const response = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -276,7 +312,7 @@ export async function translateToEnglish(text: string): Promise<string> {
         return data.choices?.[0]?.message?.content?.trim() || text;
       }
     } catch (error) {
-      console.error("Translation API error:", error);
+      console.error("OpenAI translation error:", error);
     }
   }
 
