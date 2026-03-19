@@ -67,19 +67,42 @@ export default function SettingsPage() {
           setIsConnecting(false);
           return;
         }
-        const response = await fetch("https://ollama.com/v1/models", {
-          headers: { "Authorization": `Bearer ${settings.ollamaApiKey}` }
-        });
-        if (response.ok) {
-          const data = await response.json();
-          const models = (data.models || []).map((m: { name: string }) => ({ name: m.name, model: m.name }));
-          setAvailableModels(models);
-          setIsConnected(true);
-          setStatusMessage("Connected to Ollama Cloud!");
-          setStatusType("success");
-        } else {
-          const errorText = await response.text();
-          setStatusMessage(`Failed: ${response.status} - ${errorText.substring(0, 50)}`);
+        try {
+          const response = await fetch("https://ollama.com/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${settings.ollamaApiKey}`,
+            },
+            body: JSON.stringify({
+              model: "llama3.2",
+              messages: [{ role: "user", content: "Hi" }],
+              stream: false,
+            }),
+          });
+          if (response.ok) {
+            setIsConnected(true);
+            setStatusMessage("Connected to Ollama Cloud!");
+            setStatusType("success");
+            setAvailableModels([
+              { name: "glm-4.6", model: "glm-4.6" },
+              { name: "kimi-k2.5", model: "kimi-k2.5" },
+              { name: "qwen3.5:397b", model: "qwen3.5:397b" },
+              { name: "minimax-m2.5", model: "minimax-m2.5" },
+              { name: "gemma3:4b", model: "gemma3:4b" },
+              { name: "gemma3:12b", model: "gemma3:12b" },
+              { name: "gemma3:27b", model: "gemma3:27b" },
+              { name: "deepseek-v3.2", model: "deepseek-v3.2" },
+              { name: "devstral-small-2:24b", model: "devstral-small-2:24b" },
+              { name: "mistral-large-3:675b", model: "mistral-large-3:675b" },
+            ]);
+          } else {
+            const errorText = await response.text();
+            setStatusMessage(`Failed: ${response.status} - Check API key`);
+            setStatusType("error");
+          }
+        } catch (err) {
+          setStatusMessage("Connection failed. Check network/API key.");
           setStatusType("error");
         }
       } else if (settings.provider === "openrouter") {
@@ -89,21 +112,36 @@ export default function SettingsPage() {
           setIsConnecting(false);
           return;
         }
-        const response = await fetch("https://openrouter.ai/api/v1/models?limit=100", {
-          headers: { 
-            "Authorization": `Bearer ${settings.openrouterApiKey}`,
-            "HTTP-Referer": typeof window !== "undefined" ? window.location.origin : "http://localhost",
+        try {
+          const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${settings.openrouterApiKey}`,
+              "HTTP-Referer": typeof window !== "undefined" ? window.location.origin : "http://localhost",
+            },
+            body: JSON.stringify({
+              model: "google/gemma-3-4b-it:free",
+              messages: [{ role: "user", content: "Hi" }],
+            }),
+          });
+          if (response.ok) {
+            setIsConnected(true);
+            setStatusMessage("Connected to OpenRouter!");
+            setStatusType("success");
+            setAvailableModels([
+              { name: "google/gemma-3-4b-it:free", model: "google/gemma-3-4b-it:free" },
+              { name: "deepseek/deepseek-r1:free", model: "deepseek/deepseek-r1:free" },
+              { name: "meta-llama/llama-3.1-8b-instruct:free", model: "meta-llama/llama-3.1-8b-instruct:free" },
+              { name: "mistralai/mistral-7b-instruct:free", model: "mistralai/mistral-7b-instruct:free" },
+              { name: "qwen/qwen2.5-72b-instruct:free", model: "qwen/qwen2.5-72b-instruct:free" },
+            ]);
+          } else {
+            setStatusMessage("Failed to connect. Check API key.");
+            setStatusType("error");
           }
-        });
-        if (response.ok) {
-          const data = await response.json();
-          const models = (data.data || []).slice(0, 50);
-          setAvailableModels(models.map((m: { id: string }) => ({ name: m.id, model: m.id })));
-          setIsConnected(true);
-          setStatusMessage("Connected to OpenRouter!");
-          setStatusType("success");
-        } else {
-          setStatusMessage("Failed to connect to OpenRouter");
+        } catch {
+          setStatusMessage("Connection failed. Check network/API key.");
           setStatusType("error");
         }
       } else if (settings.provider === "openai") {
