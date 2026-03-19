@@ -9,18 +9,20 @@ interface OllamaModel {
 }
 
 const PROVIDERS = [
-  { value: "ollama", label: "Ollama", description: "Local or remote Ollama server" },
-  { value: "openrouter", label: "OpenRouter", description: "Access 200+ models via API" },
+  { value: "ollama-local", label: "Ollama Local", description: "Run locally on your computer" },
+  { value: "ollama-cloud", label: "Ollama Cloud", description: "Ollama's cloud API" },
+  { value: "openrouter", label: "OpenRouter", description: "200+ models (many free)" },
   { value: "openai", label: "OpenAI", description: "GPT models (paid)" },
 ] as const;
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<AppSettings>({
-    provider: "ollama",
+    provider: "ollama-local",
     ollamaBaseUrl: "http://localhost:11434",
     ollamaModel: "llama3.2",
     openaiApiKey: "",
     openrouterApiKey: "",
+    ollamaApiKey: "",
   });
   
   const [saved, setSaved] = useState(false);
@@ -46,16 +48,37 @@ export default function SettingsPage() {
     setAvailableModels([]);
 
     try {
-      if (settings.provider === "ollama") {
+      if (settings.provider === "ollama-local") {
         const url = settings.ollamaBaseUrl || "http://localhost:11434";
         const response = await fetch(`${url}/api/tags`);
         if (response.ok) {
           setIsConnected(true);
-          setStatusMessage("Connected to Ollama!");
+          setStatusMessage("Connected to local Ollama!");
           setStatusType("success");
-          loadModels(url);
+          loadLocalModels(url);
         } else {
           setStatusMessage(`Connection failed: ${response.status}`);
+          setStatusType("error");
+        }
+      } else if (settings.provider === "ollama-cloud") {
+        if (!settings.ollamaApiKey) {
+          setStatusMessage("Please enter your Ollama API key");
+          setStatusType("error");
+          setIsConnecting(false);
+          return;
+        }
+        const response = await fetch("https://api.ollama.com/v1/models", {
+          headers: { "Authorization": `Bearer ${settings.ollamaApiKey}` }
+        });
+        if (response.ok) {
+          const data = await response.json();
+          const models = (data.models || []).map((m: { name: string }) => ({ name: m.name, model: m.name }));
+          setAvailableModels(models);
+          setIsConnected(true);
+          setStatusMessage("Connected to Ollama Cloud!");
+          setStatusType("success");
+        } else {
+          setStatusMessage("Invalid Ollama API key");
           setStatusType("error");
         }
       } else if (settings.provider === "openrouter") {
@@ -109,7 +132,7 @@ export default function SettingsPage() {
     setIsConnecting(false);
   };
 
-  const loadModels = async (url: string) => {
+  const loadLocalModels = async (url: string) => {
     setIsLoadingModels(true);
     try {
       const response = await fetch(`${url}/api/tags`);
@@ -139,7 +162,7 @@ export default function SettingsPage() {
       <div className="card mb-6">
         <h2 className="text-lg font-semibold mb-4">Select Provider</h2>
         
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
           {PROVIDERS.map((provider) => (
             <div
               key={provider.value}
@@ -161,13 +184,13 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {settings.provider === "ollama" && (
+      {settings.provider === "ollama-local" && (
         <div className="card mb-6">
-          <h2 className="text-lg font-semibold mb-4">Ollama Server</h2>
+          <h2 className="text-lg font-semibold mb-4">Local Ollama Settings</h2>
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
             <div>
-              <label className="label">Server URL</label>
+              <label className="label">Host</label>
               <input
                 type="text"
                 className="input"
@@ -180,9 +203,55 @@ export default function SettingsPage() {
                 placeholder="http://localhost:11434"
               />
               <p className="text-xs text-slate-500 mt-1">
-                Local: localhost:11434 | Cloud: openclaw.ollama.ai
+                Usually: http://localhost:11434
               </p>
             </div>
+          </div>
+          
+          <div className="bg-blue-50 p-4 rounded-lg">
+            <h3 className="font-medium text-blue-800 mb-2">Setup Local Ollama</h3>
+            <ol className="text-sm text-blue-700 space-y-1">
+              <li>1. Download Ollama from{" "}<a href="https://ollama.com" target="_blank" className="underline">ollama.com</a></li>
+              <li>2. Run: <code>ollama pull llama3.2</code></li>
+              <li>3. Ollama will start automatically on port 11434</li>
+            </ol>
+          </div>
+        </div>
+      )}
+
+      {settings.provider === "ollama-cloud" && (
+        <div className="card mb-6">
+          <h2 className="text-lg font-semibold mb-4">Ollama Cloud Settings</h2>
+          
+          <div className="mb-4">
+            <label className="label">Ollama API Key</label>
+            <input
+              type="password"
+              className="input"
+              value={settings.ollamaApiKey}
+              onChange={(e) => {
+                setSettings(s => ({ ...s, ollamaApiKey: e.target.value }));
+                setIsConnected(false);
+                setAvailableModels([]);
+              }}
+              placeholder="ollama_..."
+            />
+            <p className="text-xs text-slate-500 mt-1">
+              Get your API key from{" "}
+              <a href="https://ollama.com/account" target="_blank" className="text-cyan-600 underline">
+                ollama.com/account
+              </a>
+            </p>
+          </div>
+
+          <div className="bg-purple-50 p-4 rounded-lg">
+            <h3 className="font-medium text-purple-800 mb-2">Ollama Cloud Models</h3>
+            <ul className="text-sm text-purple-700 space-y-1">
+              <li>• llama3.2, llama3.1, llama3</li>
+              <li>• qwen2.5, qwen3</li>
+              <li>• mistral, mixtral</li>
+              <li>• gemma2, phi4</li>
+            </ul>
           </div>
         </div>
       )}
@@ -206,7 +275,7 @@ export default function SettingsPage() {
             />
             <p className="text-xs text-slate-500 mt-1">
               Get free API key from{" "}
-              <a href="https://openrouter.ai" target="_blank" rel="noopener" className="text-cyan-600 underline">
+              <a href="https://openrouter.ai" target="_blank" className="text-cyan-600 underline">
                 openrouter.ai
               </a>
             </p>
@@ -217,7 +286,6 @@ export default function SettingsPage() {
             <ul className="text-sm text-green-700 space-y-1">
               <li>• google/gemma-3-4b-it:free</li>
               <li>• deepseek/deepseek-r1:free</li>
-              <li>• qwen/qwen2.5-72b-instruct:free</li>
               <li>• meta-llama/llama-3.1-8b-instruct:free</li>
               <li>• mistralai/mistral-7b-instruct:free</li>
             </ul>
@@ -244,7 +312,7 @@ export default function SettingsPage() {
             />
             <p className="text-xs text-slate-500 mt-1">
               Get API key from{" "}
-              <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener" className="text-cyan-600 underline">
+              <a href="https://platform.openai.com/api-keys" target="_blank" className="text-cyan-600 underline">
                 platform.openai.com
               </a>
             </p>
@@ -321,24 +389,42 @@ export default function SettingsPage() {
       </div>
 
       <div className="card mt-6">
-        <h2 className="text-lg font-semibold mb-2">Quick Setup</h2>
+        <h2 className="text-lg font-semibold mb-2">Quick Setup Guide</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
           <div className="bg-purple-50 p-4 rounded-lg">
-            <h3 className="font-medium text-purple-800 mb-2">Option 1: OpenRouter (Recommended - Free)</h3>
+            <h3 className="font-medium text-purple-800 mb-2">Ollama Cloud (API)</h3>
             <ol className="text-purple-700 space-y-1 text-xs">
-              <li>1. Select: <strong>OpenRouter</strong> provider</li>
-              <li>2. Get free key from openrouter.ai</li>
-              <li>3. Enter API key</li>
-              <li>4. Model: <code>google/gemma-3-4b-it:free</code></li>
+              <li>1. Go to ollama.com/account</li>
+              <li>2. Get your API key</li>
+              <li>3. Select: <strong>Ollama Cloud</strong></li>
+              <li>4. Enter API key → Test → Select model</li>
             </ol>
           </div>
           <div className="bg-blue-50 p-4 rounded-lg">
-            <h3 className="font-medium text-blue-800 mb-2">Option 2: Local Ollama</h3>
+            <h3 className="font-medium text-blue-800 mb-2">Local Ollama (Free)</h3>
             <ol className="text-blue-700 space-y-1 text-xs">
-              <li>1. Select: <strong>Ollama</strong> provider</li>
-              <li>2. Server: <code>localhost:11434</code></li>
-              <li>3. Install from ollama.com</li>
-              <li>4. Run: <code>ollama pull llama3.2</code></li>
+              <li>1. Install from ollama.com</li>
+              <li>2. Run: <code>ollama pull llama3.2</code></li>
+              <li>3. Select: <strong>Ollama Local</strong></li>
+              <li>4. Click Test → Select model</li>
+            </ol>
+          </div>
+          <div className="bg-green-50 p-4 rounded-lg">
+            <h3 className="font-medium text-green-800 mb-2">OpenRouter (Many Free)</h3>
+            <ol className="text-green-700 space-y-1 text-xs">
+              <li>1. Go to openrouter.ai</li>
+              <li>2. Get free API key</li>
+              <li>3. Select: <strong>OpenRouter</strong></li>
+              <li>4. Enter key → Test → Select free model</li>
+            </ol>
+          </div>
+          <div className="bg-amber-50 p-4 rounded-lg">
+            <h3 className="font-medium text-amber-800 mb-2">OpenAI (Paid)</h3>
+            <ol className="text-amber-700 space-y-1 text-xs">
+              <li>1. Go to platform.openai.com</li>
+              <li>2. Get API key</li>
+              <li>3. Select: <strong>OpenAI</strong></li>
+              <li>4. Enter key → Test → Select GPT model</li>
             </ol>
           </div>
         </div>

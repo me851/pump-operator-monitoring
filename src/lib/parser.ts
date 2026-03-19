@@ -247,11 +247,11 @@ export async function translateToEnglish(text: string): Promise<string> {
   if (!isBengali) return text;
 
   const settings = getSettings();
-  const { provider, ollamaBaseUrl, ollamaModel, openaiApiKey, openrouterApiKey } = settings;
+  const { provider, ollamaBaseUrl, ollamaModel, openaiApiKey, openrouterApiKey, ollamaApiKey } = settings;
 
   const systemPrompt = "You are a Bengali to English translator. Translate the following Bengali text to English accurately. Only respond with the translation, nothing else.";
 
-  if (provider === "ollama") {
+  if (provider === "ollama-local") {
     const url = ollamaBaseUrl || "http://localhost:11434";
     try {
       const response = await fetch(`${url}/api/chat`, {
@@ -272,7 +272,33 @@ export async function translateToEnglish(text: string): Promise<string> {
         return data.message?.content?.trim() || text;
       }
     } catch (error) {
-      console.error("Ollama translation error:", error);
+      console.error("Ollama local translation error:", error);
+    }
+  }
+
+  if (provider === "ollama-cloud" && ollamaApiKey) {
+    try {
+      const response = await fetch("https://api.ollama.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${ollamaApiKey}`,
+        },
+        body: JSON.stringify({
+          model: ollamaModel || "llama3.2",
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: text }
+          ],
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        return data.choices?.[0]?.message?.content?.trim() || text;
+      }
+    } catch (error) {
+      console.error("Ollama cloud translation error:", error);
     }
   }
 
