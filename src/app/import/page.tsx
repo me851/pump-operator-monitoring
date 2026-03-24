@@ -42,6 +42,8 @@ export default function ImportPage() {
   const [parsedMessages, setParsedMessages] = useState<ChatMessage[]>([]);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isLoadingFile, setIsLoadingFile] = useState(false);
+  const [loadingStatus, setLoadingStatus] = useState("");
   const [showTranslation, setShowTranslation] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
   const [addFormData, setAddFormData] = useState({
@@ -81,7 +83,7 @@ export default function ImportPage() {
     let messageBuffer = "";
 
     const dateTimePattern = /^(\d{1,2}\/\d{1,2}\/\d{2,4}),\s*(\d{1,2}:\d{2}\s*(?:AM|PM|am|pm)?)/;
-    const phonePattern = /^(\+?[\d\s\-]+):\s*(.+)/;
+    const phonePattern = /^(\+\d{1,3}[\s\-]?\d{4,}[\s\-]?\d{4,6}):\s*(.+)/;
     const nameOnlyPattern = /^([^:]+):\s*(.+)/;
 
     for (let i = 0; i < lines.length; i++) {
@@ -157,28 +159,44 @@ export default function ImportPage() {
     if (!file) return;
 
     setSelectedFileName(file.name);
+    setIsLoadingFile(true);
+    setLoadingStatus("Reading file...");
     
     const reader = new FileReader();
     reader.onload = (e) => {
-      const content = e.target?.result as string;
+      setLoadingStatus("Parsing messages...");
       
-      const skipHeaderLines = 5;
-      const contentAfterHeader = content.split("\n").slice(skipHeaderLines).join("\n");
-      
-      const messages = parseWhatsAppChat(contentAfterHeader);
-      setParsedMessages(messages);
-      setImportResult(null);
+      setTimeout(() => {
+        const content = e.target?.result as string;
+        
+        const skipHeaderLines = 5;
+        const contentAfterHeader = content.split("\n").slice(skipHeaderLines).join("\n");
+        
+        const messages = parseWhatsAppChat(contentAfterHeader);
+        setParsedMessages(messages);
+        setImportResult(null);
+        setIsLoadingFile(false);
+        setLoadingStatus("");
+      }, 100);
+    };
+    reader.onerror = () => {
+      setLoadingStatus("Error reading file. Please try again.");
+      setIsLoadingFile(false);
     };
     reader.readAsText(file);
+  };
+
+  const normalizePhoneNumber = (phone: string): string => {
+    return phone.replace(/[\s\-\(\)\+]/g, "");
   };
 
   const getMappingByPhoneOrName = (phoneNumber: string, senderName: string): PhoneMapping | null => {
     const mappings = getPhoneMappings();
     
     if (phoneNumber) {
-      const normalized = phoneNumber.replace(/[\s\-\(\)]/g, "");
+      const normalized = normalizePhoneNumber(phoneNumber);
       const phoneMatch = mappings.find(m => {
-        const mapped = m.phoneNumber.replace(/[\s\-\(\)]/g, "");
+        const mapped = normalizePhoneNumber(m.phoneNumber);
         return mapped.includes(normalized) || normalized.includes(mapped);
       });
       if (phoneMatch) return phoneMatch;
@@ -434,9 +452,16 @@ export default function ImportPage() {
           className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-cyan-50 file:text-cyan-700 hover:file:bg-cyan-100"
         />
         
-        {selectedFileName && parsedMessages.length === 0 && (
+        {selectedFileName && !loadingStatus && parsedMessages.length === 0 && (
           <div className="mt-4 text-center">
-            <p className="text-slate-500">Reading file...</p>
+            <p className="text-slate-500">No messages found in file.</p>
+          </div>
+        )}
+        
+        {loadingStatus && (
+          <div className="mt-4 flex items-center justify-center gap-2">
+            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-cyan-600"></div>
+            <p className="text-slate-600">{loadingStatus}</p>
           </div>
         )}
       </div>
