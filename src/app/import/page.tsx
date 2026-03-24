@@ -82,33 +82,37 @@ export default function ImportPage() {
     let currentMessage: Partial<ChatMessage> = {};
     let messageBuffer = "";
 
-    const dateTimePattern = /^(\d{1,2}\/\d{1,2}\/\d{2,4}),\s*(\d{1,2}:\d{2}\s*(?:AM|PM|am|pm)?)/;
+    const dateTimePattern = /\[?(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}),?\s*(\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM|am|pm)?)\]?\s*[-–]?\s*/;
     const phonePattern = /^(\+\d{1,3}[\s\-]?\d{4,}[\s\-]?\d{4,6}):\s*(.+)/;
     const nameOnlyPattern = /^([^:]+):\s*(.+)/;
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
+      if (!line) continue;
       
       const dateMatch = line.match(dateTimePattern);
       if (dateMatch) {
-        if (currentMessage.message && currentMessage.phoneNumber) {
+        if (currentMessage.message && (currentMessage.phoneNumber || currentMessage.senderName)) {
           currentMessage.message = messageBuffer.trim();
           messages.push(currentMessage as ChatMessage);
         }
         
         let dateStr = dateMatch[1];
-        const timeStr = dateMatch[2].toUpperCase();
+        const timeStr = dateMatch[2];
         
-        const [day, month, year] = dateStr.split("/");
+        const [day, month, year] = dateStr.split(/[\/\-]/);
         const fullYear = year.length === 2 ? "20" + year : year;
         const formattedDate = `${fullYear}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
         
-        let hours = parseInt(timeStr.match(/\d+/)?.[0] || "0");
-        const minutes = parseInt(timeStr.match(/:\d+/)?.[0].replace(":", "") || "0");
-        const isPM = timeStr.includes("PM");
+        const timeParts = timeStr.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM|am|pm)?/);
+        if (!timeParts) continue;
         
-        if (isPM && hours < 12) hours += 12;
-        if (!isPM && hours === 12) hours = 0;
+        let hours = parseInt(timeParts[1]);
+        const minutes = parseInt(timeParts[2]);
+        const meridiem = timeParts[4]?.toUpperCase();
+        
+        if (meridiem === "PM" && hours < 12) hours += 12;
+        if (meridiem === "AM" && hours === 12) hours = 0;
         
         const formattedTime = `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
         
@@ -146,7 +150,7 @@ export default function ImportPage() {
       }
     }
 
-    if (currentMessage.message && currentMessage.phoneNumber) {
+    if (currentMessage.message && (currentMessage.phoneNumber || currentMessage.senderName)) {
       currentMessage.message = messageBuffer.trim();
       messages.push(currentMessage as ChatMessage);
     }
@@ -169,10 +173,7 @@ export default function ImportPage() {
       setTimeout(() => {
         const content = e.target?.result as string;
         
-        const skipHeaderLines = 5;
-        const contentAfterHeader = content.split("\n").slice(skipHeaderLines).join("\n");
-        
-        const messages = parseWhatsAppChat(contentAfterHeader);
+        const messages = parseWhatsAppChat(content);
         setParsedMessages(messages);
         setImportResult(null);
         setIsLoadingFile(false);
