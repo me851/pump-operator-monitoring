@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { getPhoneMappings, getPumpHouses, getSchemes, getDivisions, getOperations, saveOperation } from "@/lib/storage";
-import { PhoneMapping, PumpHouse, PumpOperation } from "@/types";
+import { PhoneMapping, PumpHouse, PumpOperation, Scheme, Division } from "@/types";
 import { parseWhatsAppMessage, translateToEnglish } from "@/lib/parser";
 
 interface ChatMessage {
@@ -29,6 +29,15 @@ interface ImportResult {
   unknownPhones: { phone: string; count: number; sampleMessage: string }[];
 }
 
+interface ImportHistory {
+  id: string;
+  date: string;
+  fileName: string;
+  totalMessages: number;
+  imported: number;
+  failed: number;
+}
+
 export default function ImportPage() {
   const [parsedMessages, setParsedMessages] = useState<ChatMessage[]>([]);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
@@ -44,10 +53,25 @@ export default function ImportPage() {
   });
   const [addMessage, setAddMessage] = useState("");
   const [addSuccess, setAddSuccess] = useState("");
+  const [selectedFileName, setSelectedFileName] = useState("");
+  const [importHistory, setImportHistory] = useState<ImportHistory[]>([]);
 
   const pumpHouses = getPumpHouses();
   const schemes = getSchemes();
   const divisions = getDivisions();
+
+  useEffect(() => {
+    const history = localStorage.getItem("aqualog_import_history");
+    if (history) {
+      setImportHistory(JSON.parse(history));
+    }
+  }, []);
+
+  const saveHistory = (entry: ImportHistory) => {
+    const newHistory = [entry, ...importHistory].slice(0, 10);
+    setImportHistory(newHistory);
+    localStorage.setItem("aqualog_import_history", JSON.stringify(newHistory));
+  };
 
   const parseWhatsAppChat = (content: string): ChatMessage[] => {
     const lines = content.split("\n");
@@ -132,6 +156,8 @@ export default function ImportPage() {
     const file = event.target.files?.[0];
     if (!file) return;
 
+    setSelectedFileName(file.name);
+    
     const reader = new FileReader();
     reader.onload = (e) => {
       const content = e.target?.result as string;
@@ -146,13 +172,55 @@ export default function ImportPage() {
     reader.readAsText(file);
   };
 
-  const getPhoneMapping = (phoneNumber: string): PhoneMapping | null => {
-    const normalized = phoneNumber.replace(/[\s\-\(\)]/g, "");
+  const getMappingByPhoneOrName = (phoneNumber: string, senderName: string): PhoneMapping | null => {
     const mappings = getPhoneMappings();
-    return mappings.find(m => {
-      const mapped = m.phoneNumber.replace(/[\s\-\(\)]/g, "");
-      return mapped.includes(normalized) || normalized.includes(mapped);
-    }) || null;
+    
+    if (phoneNumber) {
+      const normalized = phoneNumber.replace(/[\s\-\(\)]/g, "");
+      const phoneMatch = mappings.find(m => {
+        const mapped = m.phoneNumber.replace(/[\s\-\(\)]/g, "");
+        return mapped.includes(normalized) || normalized.includes(mapped);
+      });
+      if (phoneMatch) return phoneMatch;
+    }
+    
+    if (senderName) {
+      const nameMatch = mappings.find(m => 
+        m.operatorName?.toLowerCase() === senderName.toLowerCase() ||
+        m.operatorName?.toLowerCase().includes(senderName.toLowerCase()) ||
+        senderName.toLowerCase().includes(m.operatorName?.toLowerCase() || "")
+      );
+      if (nameMatch) return nameMatch;
+    }
+    
+    return null;
+  };
+
+  const getPumpHouseMapping = (phoneNumber: string, senderName: string): { pumpHouse: PumpHouse | null; scheme: Scheme | null; division: Division | null } => {
+    const mapping = getMappingByPhoneOrName(phoneNumber, senderName);
+    
+    if (mapping) {
+      const pumpHouse = pumpHouses.find(p => p.id === mapping.pumpHouseId) || null;
+      const scheme = pumpHouse ? schemes.find(s => s.id === pumpHouse.schemeId) || null : null;
+      const division = scheme ? divisions.find(d => d.id === scheme.divisionId) || null : null;
+      return { pumpHouse, scheme, division };
+    }
+    
+    const senderLower = senderName.toLowerCase();
+    for (const ph of pumpHouses) {
+      const scheme = schemes.find(s => s.id === ph.schemeId) || null;
+      const division = scheme ? divisions.find(d => d.id === scheme.divisionId) || null : null;
+      
+      const phName = ph.name.toLowerCase();
+      const schemeName = scheme?.name.toLowerCase() || "";
+      const divisionName = division?.name.toLowerCase() || "";
+      
+      if (senderLower.includes(phName) || senderLower.includes(schemeName) || senderLower.includes(divisionName)) {
+        return { pumpHouse: ph, scheme, division };
+      }
+    }
+    
+    return { pumpHouse: null, scheme: null, division: null };
   };
 
   const processImport = async () => {
@@ -171,15 +239,15 @@ export default function ImportPage() {
     let opCounter = maxId + 1;
 
     for (const msg of parsedMessages) {
-      const mapping = getPhoneMapping(msg.phoneNumber);
+      const { pumpHouse, scheme, division } = getPumpHouseMapping(msg.phoneNumber, msg.senderName);
       
-      if (!mapping) {
+      if (!pumpHouse) {
         result.failed++;
-        const existing = unknownPhoneMap.get(msg.phoneNumber);
+        const existing = unknownPhoneMap.get(msg.senderName || msg.phoneNumber);
         if (existing) {
           existing.count++;
         } else {
-          unknownPhoneMap.set(msg.phoneNumber, { count: 1, sampleMessage: msg.message.substring(0, 50) });
+          unknownPhoneMap.set(msg.senderName || msg.phoneNumber, { count: 1, sampleMessage: msg.message.substring(0, 50) });
         }
         continue;
       }
@@ -191,7 +259,7 @@ export default function ImportPage() {
         result.failedMessages.push({
           date: msg.date,
           time: msg.time,
-          phone: msg.phoneNumber,
+          phone: msg.senderName || msg.phoneNumber,
           message: msg.message,
           reason: "Could not understand message"
         });
@@ -206,9 +274,9 @@ export default function ImportPage() {
       if (parsed.action === "start") {
         const newOp: PumpOperation = {
           id: "op" + opCounter++,
-          pumpHouseId: mapping.pumpHouseId,
-          operatorName: mapping.operatorName || msg.senderName,
-          phoneNumber: msg.phoneNumber,
+          pumpHouseId: pumpHouse.id,
+          operatorName: msg.senderName || "Unknown",
+          phoneNumber: msg.phoneNumber || msg.senderName,
           date,
           startTime: time,
           stopTime: null,
@@ -223,7 +291,7 @@ export default function ImportPage() {
       } 
       else if (parsed.action === "stop") {
         const todayOps = existingOps.filter(
-          o => o.pumpHouseId === mapping.pumpHouseId && 
+          o => o.pumpHouseId === pumpHouse.id && 
                o.date === date && 
                o.status === "running" &&
                !o.stopTime
@@ -239,9 +307,9 @@ export default function ImportPage() {
         } else {
           const newOp: PumpOperation = {
             id: "op" + opCounter++,
-            pumpHouseId: mapping.pumpHouseId,
-            operatorName: mapping.operatorName || msg.senderName,
-            phoneNumber: msg.phoneNumber,
+            pumpHouseId: pumpHouse.id,
+            operatorName: msg.senderName || "Unknown",
+            phoneNumber: msg.phoneNumber || msg.senderName,
             date,
             startTime: null,
             stopTime: time,
@@ -258,9 +326,9 @@ export default function ImportPage() {
       else if (parsed.action === "not_running") {
         const newOp: PumpOperation = {
           id: "op" + opCounter++,
-          pumpHouseId: mapping.pumpHouseId,
-          operatorName: mapping.operatorName || msg.senderName,
-          phoneNumber: msg.phoneNumber,
+          pumpHouseId: pumpHouse.id,
+          operatorName: msg.senderName || "Unknown",
+          phoneNumber: msg.phoneNumber || msg.senderName,
           date,
           startTime: null,
           stopTime: null,
@@ -281,6 +349,16 @@ export default function ImportPage() {
     }));
     
     localStorage.setItem("aqualog_operations", JSON.stringify(existingOps));
+    
+    saveHistory({
+      id: "imp" + Date.now(),
+      date: new Date().toISOString(),
+      fileName: selectedFileName,
+      totalMessages: parsedMessages.length,
+      imported: result.success,
+      failed: result.failed
+    });
+    
     setImportResult(result);
     setIsProcessing(false);
   };
@@ -333,8 +411,8 @@ export default function ImportPage() {
     setTimeout(() => setAddSuccess(""), 3000);
   };
 
-  const mappedMessages = parsedMessages.filter(msg => getPhoneMapping(msg.phoneNumber));
-  const unmappedMessages = parsedMessages.filter(msg => !getPhoneMapping(msg.phoneNumber));
+  const mappedMessages = parsedMessages.filter(msg => getMappingByPhoneOrName(msg.phoneNumber, msg.senderName));
+  const unmappedMessages = parsedMessages.filter(msg => !getMappingByPhoneOrName(msg.phoneNumber, msg.senderName));
 
   return (
     <div>
@@ -355,6 +433,12 @@ export default function ImportPage() {
           onChange={handleFileUpload}
           className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-cyan-50 file:text-cyan-700 hover:file:bg-cyan-100"
         />
+        
+        {selectedFileName && parsedMessages.length === 0 && (
+          <div className="mt-4 text-center">
+            <p className="text-slate-500">Reading file...</p>
+          </div>
+        )}
       </div>
 
       {parsedMessages.length > 0 && (
@@ -365,7 +449,7 @@ export default function ImportPage() {
               <p className="text-2xl font-bold">{parsedMessages.length}</p>
             </div>
             <div className="card">
-              <p className="text-sm text-slate-500">Mapped (Registered)</p>
+              <p className="text-sm text-slate-500">Mapped (Identified)</p>
               <p className="text-2xl font-bold text-green-600">{mappedMessages.length}</p>
             </div>
             <div className="card">
@@ -376,24 +460,24 @@ export default function ImportPage() {
 
           {unmappedMessages.length > 0 && (
             <div className="card mb-6 border-l-4 border-amber-500">
-              <h3 className="font-semibold text-amber-700 mb-2">⚠️ Unmapped Phone Numbers</h3>
+              <h3 className="font-semibold text-amber-700 mb-2">⚠️ Unmapped Senders</h3>
               <p className="text-sm text-slate-600 mb-3">
-                These phone numbers are not registered. Please add them in Master Data → Phone Mappings
+                These senders could not be mapped. They may be identified by name instead of phone number.
               </p>
               <div className="max-h-40 overflow-y-auto">
                 <table className="table text-sm">
                   <thead>
                     <tr>
-                      <th>Phone</th>
+                      <th>Sender Name</th>
                       <th>Sample Message</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {[...new Set(unmappedMessages.map(m => m.phoneNumber))].map(phone => (
-                      <tr key={phone}>
-                        <td className="font-mono">{phone}</td>
+                    {[...new Set(unmappedMessages.map(m => m.senderName || m.phoneNumber))].map(sender => (
+                      <tr key={sender}>
+                        <td className="font-medium">{sender}</td>
                         <td className="text-slate-500">
-                          {unmappedMessages.find(m => m.phoneNumber === phone)?.message.substring(0, 40)}...
+                          {unmappedMessages.find(m => (m.senderName || m.phoneNumber) === sender)?.message.substring(0, 40)}...
                         </td>
                       </tr>
                     ))}
@@ -405,27 +489,27 @@ export default function ImportPage() {
 
           <div className="card mb-6">
             <h3 className="font-semibold mb-4">Preview Messages</h3>
-            <div className="max-h-96 overflow-y-auto">
+            <div className="max-h-64 overflow-y-auto">
               <table className="table text-sm">
                 <thead>
                   <tr>
                     <th>Date/Time</th>
-                    <th>Phone</th>
-                    <th>Original Message</th>
+                    <th>Sender</th>
+                    <th>Message</th>
                     <th>Status</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {parsedMessages.slice(0, 50).map((msg, idx) => {
-                    const mapping = getPhoneMapping(msg.phoneNumber);
+                  {parsedMessages.slice(0, 30).map((msg, idx) => {
+                    const mapping = getMappingByPhoneOrName(msg.phoneNumber, msg.senderName);
                     const parsed = parseWhatsAppMessage(msg.message, msg.whatsappTimestamp);
                     return (
                       <tr key={idx}>
                         <td className="whitespace-nowrap">{msg.date} {msg.time}</td>
-                        <td className="font-mono text-xs">{msg.phoneNumber.substring(0, 15)}</td>
+                        <td className="text-xs">{msg.senderName || msg.phoneNumber}</td>
                         <td className="max-w-xs truncate" title={msg.message}>
-                          {msg.message.substring(0, 35)}
-                          {msg.message.length > 35 && "..."}
+                          {msg.message.substring(0, 30)}
+                          {msg.message.length > 30 && "..."}
                         </td>
                         <td>
                           {mapping ? (
@@ -433,7 +517,7 @@ export default function ImportPage() {
                               {parsed.action}
                             </span>
                           ) : (
-                            <span className="badge bg-amber-100 text-amber-700">Unknown Phone</span>
+                            <span className="badge bg-amber-100 text-amber-700">Unknown</span>
                           )}
                         </td>
                       </tr>
@@ -441,9 +525,9 @@ export default function ImportPage() {
                   })}
                 </tbody>
               </table>
-              {parsedMessages.length > 50 && (
+              {parsedMessages.length > 30 && (
                 <p className="text-sm text-slate-500 text-center py-2">
-                  ...and {parsedMessages.length - 50} more messages
+                  ...and {parsedMessages.length - 30} more messages
                 </p>
               )}
             </div>
@@ -457,12 +541,23 @@ export default function ImportPage() {
             >
               {isProcessing ? "Processing & Translating..." : `Import ${mappedMessages.length} Messages`}
             </button>
+            
+            <button
+              onClick={() => {
+                setParsedMessages([]);
+                setSelectedFileName("");
+                setImportResult(null);
+              }}
+              className="btn btn-secondary"
+            >
+              Clear
+            </button>
           </div>
         </>
       )}
 
       {importResult && (
-        <div className="space-y-4">
+        <div className="space-y-4 mt-6">
           <div className={`card ${importResult.failed === 0 ? "border-green-500" : "border-amber-500"}`}>
             <h3 className="font-semibold mb-2">
               {importResult.failed === 0 ? "✅ Import Complete" : "⚠️ Import Completed with Issues"}
@@ -481,15 +576,15 @@ export default function ImportPage() {
 
           {importResult.unknownPhones.length > 0 && (
             <div className="card border-l-4 border-red-500">
-              <h3 className="font-semibold text-red-700 mb-3">⚠️ Unknown Phone Numbers - Need Registration</h3>
+              <h3 className="font-semibold text-red-700 mb-3">⚠️ Unmapped Senders - Need Registration</h3>
               <p className="text-sm text-slate-600 mb-4">
-                These phone numbers are not registered. Go to Master Data → Phone Mappings to add them.
+                These senders were not recognized. Add them in Master Data → Phone Mappings with their operator name or phone.
               </p>
               <div className="max-h-60 overflow-y-auto">
                 <table className="table text-sm">
                   <thead>
                     <tr>
-                      <th>Phone Number</th>
+                      <th>Sender</th>
                       <th>Messages Count</th>
                       <th>Sample Message</th>
                     </tr>
@@ -497,7 +592,7 @@ export default function ImportPage() {
                   <tbody>
                     {importResult.unknownPhones.map((item, idx) => (
                       <tr key={idx}>
-                        <td className="font-mono font-medium">{item.phone}</td>
+                        <td className="font-medium">{item.phone}</td>
                         <td><span className="badge bg-red-100 text-red-700">{item.count}</span></td>
                         <td className="text-slate-500">{item.sampleMessage}...</td>
                       </tr>
@@ -520,7 +615,7 @@ export default function ImportPage() {
                     <tr>
                       <th>Date</th>
                       <th>Time</th>
-                      <th>Phone</th>
+                      <th>Sender</th>
                       <th>Message</th>
                       <th>Reason</th>
                       <th>Action</th>
@@ -531,7 +626,7 @@ export default function ImportPage() {
                       <tr key={idx}>
                         <td>{msg.date}</td>
                         <td>{msg.time}</td>
-                        <td className="font-mono">{msg.phone}</td>
+                        <td>{msg.phone}</td>
                         <td className="max-w-xs truncate">{msg.message}</td>
                         <td><span className="badge bg-amber-100 text-amber-700">{msg.reason}</span></td>
                         <td>
@@ -539,7 +634,7 @@ export default function ImportPage() {
                             onClick={() => openAddForm(msg)}
                             className="text-xs bg-cyan-600 text-white px-2 py-1 rounded hover:bg-cyan-700"
                           >
-                            Add to Log
+                            Add
                           </button>
                         </td>
                       </tr>
@@ -549,6 +644,36 @@ export default function ImportPage() {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {importHistory.length > 0 && (
+        <div className="card mt-6">
+          <h3 className="font-semibold mb-4">Recent Imports</h3>
+          <div className="overflow-x-auto">
+            <table className="table text-sm">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>File Name</th>
+                  <th>Total</th>
+                  <th>Imported</th>
+                  <th>Failed</th>
+                </tr>
+              </thead>
+              <tbody>
+                {importHistory.map((entry) => (
+                  <tr key={entry.id}>
+                    <td>{new Date(entry.date).toLocaleString()}</td>
+                    <td>{entry.fileName}</td>
+                    <td>{entry.totalMessages}</td>
+                    <td className="text-green-600">{entry.imported}</td>
+                    <td className="text-amber-600">{entry.failed}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
