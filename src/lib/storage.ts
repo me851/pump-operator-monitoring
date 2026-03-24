@@ -26,6 +26,7 @@ export function saveDivision(division: Omit<Division, "id">): Division {
   const newDivision: Division = { ...division, id: generateId() };
   divisions.push(newDivision);
   localStorage.setItem(STORAGE_KEYS.divisions, JSON.stringify(divisions));
+  autoSyncToServer();
   return newDivision;
 }
 
@@ -35,6 +36,7 @@ export function updateDivision(division: Division): void {
   if (index !== -1) {
     divisions[index] = division;
     localStorage.setItem(STORAGE_KEYS.divisions, JSON.stringify(divisions));
+    autoSyncToServer();
   }
 }
 
@@ -50,6 +52,7 @@ export function deleteDivision(id: string): void {
     (p) => !schemeIds.includes(p.schemeId)
   );
   localStorage.setItem(STORAGE_KEYS.pumpHouses, JSON.stringify(pumpHouses));
+  autoSyncToServer();
 }
 
 export function getSchemes(): Scheme[] {
@@ -67,6 +70,7 @@ export function saveScheme(scheme: Omit<Scheme, "id">): Scheme {
   const newScheme: Scheme = { ...scheme, id: generateId() };
   schemes.push(newScheme);
   localStorage.setItem(STORAGE_KEYS.schemes, JSON.stringify(schemes));
+  autoSyncToServer();
   return newScheme;
 }
 
@@ -76,6 +80,7 @@ export function updateScheme(scheme: Scheme): void {
   if (index !== -1) {
     schemes[index] = scheme;
     localStorage.setItem(STORAGE_KEYS.schemes, JSON.stringify(schemes));
+    autoSyncToServer();
   }
 }
 
@@ -84,6 +89,7 @@ export function deleteScheme(id: string): void {
   localStorage.setItem(STORAGE_KEYS.schemes, JSON.stringify(schemes));
   const pumpHouses = getPumpHouses().filter((p) => p.schemeId !== id);
   localStorage.setItem(STORAGE_KEYS.pumpHouses, JSON.stringify(pumpHouses));
+  autoSyncToServer();
 }
 
 export function getPumpHouses(): PumpHouse[] {
@@ -101,6 +107,7 @@ export function savePumpHouse(pumpHouse: Omit<PumpHouse, "id">): PumpHouse {
   const newPumpHouse: PumpHouse = { ...pumpHouse, id: generateId() };
   pumpHouses.push(newPumpHouse);
   localStorage.setItem(STORAGE_KEYS.pumpHouses, JSON.stringify(pumpHouses));
+  autoSyncToServer();
   return newPumpHouse;
 }
 
@@ -110,6 +117,7 @@ export function updatePumpHouse(pumpHouse: PumpHouse): void {
   if (index !== -1) {
     pumpHouses[index] = pumpHouse;
     localStorage.setItem(STORAGE_KEYS.pumpHouses, JSON.stringify(pumpHouses));
+    autoSyncToServer();
   }
 }
 
@@ -118,6 +126,7 @@ export function deletePumpHouse(id: string): void {
   localStorage.setItem(STORAGE_KEYS.pumpHouses, JSON.stringify(pumpHouses));
   const phoneMappings = getPhoneMappings().filter((pm) => pm.pumpHouseId !== id);
   localStorage.setItem(STORAGE_KEYS.phoneMappings, JSON.stringify(phoneMappings));
+  autoSyncToServer();
 }
 
 export function getPhoneMappings(): PhoneMapping[] {
@@ -141,6 +150,7 @@ export function savePhoneMapping(mapping: Omit<PhoneMapping, "id">): PhoneMappin
   const newMapping: PhoneMapping = { ...mapping, id: generateId() };
   mappings.push(newMapping);
   localStorage.setItem(STORAGE_KEYS.phoneMappings, JSON.stringify(mappings));
+  autoSyncToServer();
   return newMapping;
 }
 
@@ -150,12 +160,14 @@ export function updatePhoneMapping(mapping: PhoneMapping): void {
   if (index !== -1) {
     mappings[index] = mapping;
     localStorage.setItem(STORAGE_KEYS.phoneMappings, JSON.stringify(mappings));
+    autoSyncToServer();
   }
 }
 
 export function deletePhoneMapping(id: string): void {
   const mappings = getPhoneMappings().filter((m) => m.id !== id);
   localStorage.setItem(STORAGE_KEYS.phoneMappings, JSON.stringify(mappings));
+  autoSyncToServer();
 }
 
 export function getOperations(): PumpOperation[] {
@@ -173,6 +185,7 @@ export function saveOperation(operation: Omit<PumpOperation, "id" | "createdAt">
   };
   operations.push(newOperation);
   localStorage.setItem(STORAGE_KEYS.operations, JSON.stringify(operations));
+  autoSyncToServer();
   return newOperation;
 }
 
@@ -182,6 +195,7 @@ export function updateOperation(operation: PumpOperation): void {
   if (index !== -1) {
     operations[index] = operation;
     localStorage.setItem(STORAGE_KEYS.operations, JSON.stringify(operations));
+    autoSyncToServer();
   }
 }
 
@@ -265,10 +279,36 @@ export function saveSettings(settings: Partial<AppSettings>): AppSettings {
   const current = getSettings();
   const updated = { ...current, ...settings };
   localStorage.setItem(STORAGE_KEYS.settings, JSON.stringify(updated));
+  autoSyncToServer();
   return updated;
 }
 
 // Server sync functions (async)
+async function autoSyncToServer(): Promise<void> {
+  const settings = getSettings();
+  const serverUrl = settings.serverUrl;
+  if (!serverUrl) return;
+  
+  const data = {
+    divisions: getDivisions(),
+    schemes: getSchemes(),
+    pumpHouses: getPumpHouses(),
+    phoneMappings: getPhoneMappings(),
+    operations: getOperations(),
+    settings: getSettings(),
+  };
+  
+  try {
+    await fetch(`${serverUrl}/api/sync`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+  } catch {
+    // Silent fail for auto-sync
+  }
+}
+
 export async function syncToServer(): Promise<{ success: boolean; error?: string }> {
   const settings = getSettings();
   const serverUrl = settings.serverUrl;
