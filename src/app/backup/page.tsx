@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { createBackup, downloadBackup, restoreBackup, getBackupInfo, BackupData } from "@/lib/backup";
-import { getDivisions, getSchemes, getPumpHouses, getOperations } from "@/lib/storage";
+import { getDivisions, getSchemes, getPumpHouses, getOperations, syncToServer, syncFromServer } from "@/lib/storage";
 
 export default function BackupPage() {
   const [currentData, setCurrentData] = useState({
@@ -14,6 +14,7 @@ export default function BackupPage() {
   const [status, setStatus] = useState("");
   const [statusType, setStatusType] = useState<"success" | "error" | "">("");
   const [restoreMode, setRestoreMode] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [backupInfo, setBackupInfo] = useState<{
     totalRecords: number;
     divisions: number;
@@ -37,6 +38,40 @@ export default function BackupPage() {
     downloadBackup(backup);
     setStatus("Backup downloaded successfully!");
     setStatusType("success");
+    setTimeout(() => setStatus(""), 3000);
+  };
+
+  const handleSyncToServer = async () => {
+    setIsSyncing(true);
+    try {
+      await syncToServer();
+      setStatus("Data synced to server successfully!");
+      setStatusType("success");
+    } catch {
+      setStatus("Failed to sync to server");
+      setStatusType("error");
+    }
+    setIsSyncing(false);
+    setTimeout(() => setStatus(""), 3000);
+  };
+
+  const handleSyncFromServer = async () => {
+    setIsSyncing(true);
+    try {
+      await syncFromServer();
+      setCurrentData({
+        divisions: getDivisions().length,
+        schemes: getSchemes().length,
+        pumpHouses: getPumpHouses().length,
+        operations: getOperations().length,
+      });
+      setStatus("Data synced from server successfully!");
+      setStatusType("success");
+    } catch {
+      setStatus("Failed to sync from server");
+      setStatusType("error");
+    }
+    setIsSyncing(false);
     setTimeout(() => setStatus(""), 3000);
   };
 
@@ -104,7 +139,7 @@ export default function BackupPage() {
         <p className="page-subtitle">Backup your data locally or restore from a previous backup</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         <div className="card">
           <h2 className="text-lg font-semibold mb-4">Current Data</h2>
           <div className="space-y-3">
@@ -143,6 +178,32 @@ export default function BackupPage() {
           </button>
           <p className="text-xs text-slate-500 mt-3">
             The backup will be saved as a JSON file that can be restored later.
+          </p>
+        </div>
+
+        <div className="card">
+          <h2 className="text-lg font-semibold mb-4">Network Sync</h2>
+          <p className="text-slate-600 mb-4">
+            Sync data between machines in your local network. All machines accessing this server will see the same data.
+          </p>
+          <div className="space-y-2">
+            <button 
+              onClick={handleSyncToServer} 
+              disabled={isSyncing}
+              className="btn btn-primary w-full"
+            >
+              {isSyncing ? "Syncing..." : "Sync to Server"}
+            </button>
+            <button 
+              onClick={handleSyncFromServer} 
+              disabled={isSyncing}
+              className="btn btn-secondary w-full"
+            >
+              {isSyncing ? "Syncing..." : "Sync from Server"}
+            </button>
+          </div>
+          <p className="text-xs text-slate-500 mt-3">
+            Data is stored on the server and shared across all machines.
           </p>
         </div>
       </div>

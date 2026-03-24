@@ -265,3 +265,47 @@ export function saveSettings(settings: Partial<AppSettings>): AppSettings {
   localStorage.setItem(STORAGE_KEYS.settings, JSON.stringify(updated));
   return updated;
 }
+
+// Server sync functions (async)
+export async function syncToServer(): Promise<void> {
+  const data = {
+    divisions: getDivisions(),
+    schemes: getSchemes(),
+    pumpHouses: getPumpHouses(),
+    phoneMappings: getPhoneMappings(),
+    operations: getOperations(),
+    settings: getSettings(),
+  };
+  
+  await fetch("/api/sync", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function syncFromServer(): Promise<void> {
+  try {
+    const res = await fetch("/api/sync");
+    if (!res.ok) return;
+    const data = await res.json();
+    
+    if (data.divisions?.length > 0) {
+      localStorage.setItem(STORAGE_KEYS.divisions, JSON.stringify(data.divisions));
+    }
+    if (data.schemes?.length > 0) {
+      localStorage.setItem(STORAGE_KEYS.schemes, JSON.stringify(data.schemes));
+    }
+    if (data.pumpHouses?.length > 0) {
+      localStorage.setItem(STORAGE_KEYS.pumpHouses, JSON.stringify(data.pumpHouses));
+    }
+    if (data.phoneMappings?.length > 0) {
+      localStorage.setItem(STORAGE_KEYS.phoneMappings, JSON.stringify(data.phoneMappings));
+    }
+    if (data.operations?.length > 0) {
+      localStorage.setItem(STORAGE_KEYS.operations, JSON.stringify(data.operations));
+    }
+  } catch (e) {
+    console.error("Sync failed:", e);
+  }
+}
