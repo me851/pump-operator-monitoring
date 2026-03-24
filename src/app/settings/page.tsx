@@ -23,9 +23,11 @@ export default function SettingsPage() {
     openaiApiKey: "",
     openrouterApiKey: "",
     ollamaApiKey: "",
+    serverUrl: "",
   });
   
   const [saved, setSaved] = useState(false);
+  const [serverTestStatus, setServerTestStatus] = useState<"idle" | "testing" | "success" | "error">("idle");
   
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
@@ -423,6 +425,54 @@ export default function SettingsPage() {
               </div>
             )}
           </>
+        )}
+      </div>
+
+      <div className="card mb-6">
+        <h2 className="text-lg font-semibold mb-4">Network Sync Server</h2>
+        
+        <div className="mb-4">
+          <label className="label">Server URL</label>
+          <input
+            type="text"
+            className="input"
+            value={settings.serverUrl}
+            onChange={(e) => setSettings(s => ({ ...s, serverUrl: e.target.value }))}
+            placeholder="http://192.168.1.100:3000"
+          />
+          <p className="text-xs text-slate-500 mt-1">
+            Enter the IP address of the machine running the server (e.g., http://192.168.1.100:3000)
+          </p>
+        </div>
+
+        {settings.serverUrl && (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={async () => {
+                setServerTestStatus("testing");
+                try {
+                  const res = await fetch(`${settings.serverUrl}/api/sync`);
+                  if (res.ok) {
+                    setServerTestStatus("success");
+                  } else {
+                    setServerTestStatus("error");
+                  }
+                } catch {
+                  setServerTestStatus("error");
+                }
+              }}
+              disabled={serverTestStatus === "testing"}
+              className="btn btn-secondary"
+            >
+              {serverTestStatus === "testing" ? "Testing..." : "Test Connection"}
+            </button>
+            {serverTestStatus === "success" && (
+              <span className="text-green-600 text-sm">Connected!</span>
+            )}
+            {serverTestStatus === "error" && (
+              <span className="text-red-600 text-sm">Cannot connect</span>
+            )}
+          </div>
         )}
       </div>
 

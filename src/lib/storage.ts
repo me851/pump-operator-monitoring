@@ -242,6 +242,7 @@ export interface AppSettings {
   openaiApiKey: string;
   openrouterApiKey: string;
   ollamaApiKey: string;
+  serverUrl: string;
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -251,6 +252,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   openaiApiKey: "",
   openrouterApiKey: "",
   ollamaApiKey: "",
+  serverUrl: "",
 };
 
 export function getSettings(): AppSettings {
@@ -267,7 +269,14 @@ export function saveSettings(settings: Partial<AppSettings>): AppSettings {
 }
 
 // Server sync functions (async)
-export async function syncToServer(): Promise<void> {
+export async function syncToServer(): Promise<{ success: boolean; error?: string }> {
+  const settings = getSettings();
+  const serverUrl = settings.serverUrl;
+  
+  if (!serverUrl) {
+    return { success: false, error: "Server URL not configured" };
+  }
+  
   const data = {
     divisions: getDivisions(),
     schemes: getSchemes(),
@@ -277,17 +286,35 @@ export async function syncToServer(): Promise<void> {
     settings: getSettings(),
   };
   
-  await fetch("/api/sync", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
-  });
+  try {
+    const res = await fetch(`${serverUrl}/api/sync`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    
+    if (!res.ok) {
+      return { success: false, error: "Server sync failed" };
+    }
+    
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: "Cannot connect to server" };
+  }
 }
 
-export async function syncFromServer(): Promise<void> {
+export async function syncFromServer(): Promise<{ success: boolean; error?: string }> {
+  const settings = getSettings();
+  const serverUrl = settings.serverUrl;
+  
+  if (!serverUrl) {
+    return { success: false, error: "Server URL not configured" };
+  }
+  
   try {
-    const res = await fetch("/api/sync");
-    if (!res.ok) return;
+    const res = await fetch(`${serverUrl}/api/sync`);
+    if (!res.ok) return { success: false, error: "Server fetch failed" };
+    
     const data = await res.json();
     
     if (data.divisions?.length > 0) {
@@ -305,7 +332,12 @@ export async function syncFromServer(): Promise<void> {
     if (data.operations?.length > 0) {
       localStorage.setItem(STORAGE_KEYS.operations, JSON.stringify(data.operations));
     }
+    if (data.settings) {
+      localStorage.setItem(STORAGE_KEYS.settings, JSON.stringify(data.settings));
+    }
+    
+    return { success: true };
   } catch (e) {
-    console.error("Sync failed:", e);
+    return { success: false, error: "Cannot connect to server" };
   }
 }

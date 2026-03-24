@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { createBackup, downloadBackup, restoreBackup, getBackupInfo, BackupData } from "@/lib/backup";
-import { getDivisions, getSchemes, getPumpHouses, getOperations, syncToServer, syncFromServer } from "@/lib/storage";
+import { getDivisions, getSchemes, getPumpHouses, getOperations, syncToServer, syncFromServer, getSettings } from "@/lib/storage";
 
 export default function BackupPage() {
   const [currentData, setCurrentData] = useState({
@@ -24,6 +24,9 @@ export default function BackupPage() {
   } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const settings = getSettings();
+  const serverConfigured = !!settings.serverUrl;
+
   useEffect(() => {
     setCurrentData({
       divisions: getDivisions().length,
@@ -43,12 +46,12 @@ export default function BackupPage() {
 
   const handleSyncToServer = async () => {
     setIsSyncing(true);
-    try {
-      await syncToServer();
+    const result = await syncToServer();
+    if (result.success) {
       setStatus("Data synced to server successfully!");
       setStatusType("success");
-    } catch {
-      setStatus("Failed to sync to server");
+    } else {
+      setStatus(result.error || "Failed to sync to server");
       setStatusType("error");
     }
     setIsSyncing(false);
@@ -57,8 +60,8 @@ export default function BackupPage() {
 
   const handleSyncFromServer = async () => {
     setIsSyncing(true);
-    try {
-      await syncFromServer();
+    const result = await syncFromServer();
+    if (result.success) {
       setCurrentData({
         divisions: getDivisions().length,
         schemes: getSchemes().length,
@@ -67,8 +70,8 @@ export default function BackupPage() {
       });
       setStatus("Data synced from server successfully!");
       setStatusType("success");
-    } catch {
-      setStatus("Failed to sync from server");
+    } else {
+      setStatus(result.error || "Failed to sync from server");
       setStatusType("error");
     }
     setIsSyncing(false);
@@ -183,28 +186,41 @@ export default function BackupPage() {
 
         <div className="card">
           <h2 className="text-lg font-semibold mb-4">Network Sync</h2>
-          <p className="text-slate-600 mb-4">
-            Sync data between machines in your local network. All machines accessing this server will see the same data.
-          </p>
-          <div className="space-y-2">
-            <button 
-              onClick={handleSyncToServer} 
-              disabled={isSyncing}
-              className="btn btn-primary w-full"
-            >
-              {isSyncing ? "Syncing..." : "Sync to Server"}
-            </button>
-            <button 
-              onClick={handleSyncFromServer} 
-              disabled={isSyncing}
-              className="btn btn-secondary w-full"
-            >
-              {isSyncing ? "Syncing..." : "Sync from Server"}
-            </button>
-          </div>
-          <p className="text-xs text-slate-500 mt-3">
-            Data is stored on the server and shared across all machines.
-          </p>
+          {!serverConfigured ? (
+            <>
+              <p className="text-slate-600 mb-4">
+                Configure the server URL in Settings to enable network sync between machines.
+              </p>
+              <a href="/settings" className="btn btn-primary w-full text-center block">
+                Go to Settings
+              </a>
+            </>
+          ) : (
+            <>
+              <p className="text-slate-600 mb-2">
+                Server: <span className="font-mono text-sm">{settings.serverUrl}</span>
+              </p>
+              <div className="space-y-2">
+                <button 
+                  onClick={handleSyncToServer} 
+                  disabled={isSyncing}
+                  className="btn btn-primary w-full"
+                >
+                  {isSyncing ? "Syncing..." : "Sync to Server"}
+                </button>
+                <button 
+                  onClick={handleSyncFromServer} 
+                  disabled={isSyncing}
+                  className="btn btn-secondary w-full"
+                >
+                  {isSyncing ? "Syncing..." : "Sync from Server"}
+                </button>
+              </div>
+              <p className="text-xs text-slate-500 mt-3">
+                Data is stored on the server and shared across all machines.
+              </p>
+            </>
+          )}
         </div>
       </div>
 
